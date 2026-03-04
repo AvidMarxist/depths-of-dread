@@ -25,7 +25,8 @@ import importlib
 from unittest.mock import MagicMock, patch
 from collections import deque
 
-# Import from the package
+# Add src directory to path for package imports
+sys.path.insert(0, os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "src"))
 from depths_of_dread import game as dungeon
 from depths_of_dread.game import (
     GameState, Player, Enemy, Item, BSPNode, ShopItem,
