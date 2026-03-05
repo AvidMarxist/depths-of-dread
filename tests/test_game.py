@@ -1036,13 +1036,15 @@ class TestPortability:
             'hashlib', 'os', 'pathlib', 'collections', 'argparse', 'datetime',
             'subprocess', 'threading', 'traceback',
         }
+        # Optional imports wrapped in try/except are allowed
+        optional_modules = {'agent_commons'}
         for line in import_lines:
             # Extract module name
             if line.startswith('from '):
                 mod = line.split()[1].split('.')[0]
             else:
                 mod = line.split()[1].split('.')[0]
-            assert mod in stdlib_modules, f"Non-stdlib import: {mod}"
+            assert mod in stdlib_modules or mod in optional_modules, f"Non-stdlib import: {mod}"
 
     def test_save_file_path_uses_home(self):
         """Save file path uses home directory (portable)."""

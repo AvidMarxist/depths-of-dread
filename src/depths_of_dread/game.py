@@ -29,6 +29,21 @@ import datetime
 import subprocess
 # threading — available if needed but not currently used
 
+# Agent-commons: universal agentic testing framework (optional)
+try:
+    sys.path.insert(0, os.path.join(os.path.dirname(os.path.abspath(__file__)), '..', 'agent-commons'))
+    from agent_commons import (
+        ProgressStallDetector, ActionRepetitionDetector, ResourceBudgetMonitor,
+        DecisionTrace, StateSnapshotManager, ActionDistribution,
+        StructuredOutputValidator, StallRecoveryManager,
+        FeatureCoverageTracker, NoveltySeekerBias, DREAD_FEATURES,
+        PostRunSummaryReport, DeathAutopsy,
+        CallBudgetManager, TriggerDeduplicator,
+    )
+    HAS_AGENT_COMMONS = True
+except ImportError:
+    HAS_AGENT_COMMONS = False
+
 # ============================================================
 # CONSTANTS
 # ============================================================
@@ -7358,6 +7373,37 @@ class AgentPlayer:
         self._last_stuck_turn = 0                  # Turn when last stuck trigger fired
         self._game_id = game_id
         self._log_file = None
+        # --- Agent-commons integration ---
+        if HAS_AGENT_COMMONS:
+            log_dir = os.path.expanduser("~/.depths_of_dread_agent_traces")
+            os.makedirs(log_dir, exist_ok=True)
+            trace_path = os.path.join(log_dir, f"game_{game_id}.jsonl")
+            self._ac_trace = DecisionTrace(trace_path)
+            self._ac_snapshots = StateSnapshotManager(
+                snapshot_dir=log_dir, every_n_turns=25)
+            self._ac_actions = ActionDistribution()
+            self._ac_stall = ProgressStallDetector(threshold=20)
+            self._ac_rep = ActionRepetitionDetector(window=20, repeat_threshold=5)
+            self._ac_coverage = FeatureCoverageTracker()
+            self._ac_coverage.register_features(DREAD_FEATURES)
+            self._ac_novelty = NoveltySeekerBias(weight=0.3)
+            self._ac_budget = CallBudgetManager(per_game=300, per_batch=1800)
+            self._ac_validator = StructuredOutputValidator()
+            self._ac_recovery = StallRecoveryManager(
+                valid_actions=["move_north", "move_south", "move_east", "move_west",
+                               "attack", "wait", "use_potion", "descend"])
+            self._ac_dedup = TriggerDeduplicator()
+            for trig, cd, crit in [
+                ("enemies_visible", 0, False), ("low_hp", 3, True),
+                ("boss", 0, True), ("new_floor", 0, True),
+                ("shop", 10, False), ("shrine", 10, False),
+                ("alchemy_table", 0, False), ("pedestal", 0, False),
+                ("locked_stairs", 0, False), ("wall_torch", 10, False),
+                ("stuck", 0, True), ("inventory_full", 5, False),
+            ]:
+                self._ac_dedup.register_trigger(trig, cooldown_turns=cd, critical=crit)
+        else:
+            self._ac_trace = None
 
     def _open_log(self):
         """Open the agent log file for real-time JSONL streaming."""
@@ -7704,6 +7750,55 @@ class AgentPlayer:
             flags.append(f"STUCK: {gs.turn_count} turns, only floor {p.floor}")
         report["flags"] = flags
         self._log("post_game_report", report)
+
+        # Agent-commons: generate detailed summary and autopsy
+        if HAS_AGENT_COMMONS and self._ac_trace is not None:
+            try:
+                summary_gen = PostRunSummaryReport()
+                game_stats = {
+                    "floor": p.floor, "score": calculate_score(gs) if hasattr(gs, 'player') else 0,
+                    "turns": gs.turn_count,
+                    "outcome": "victory" if gs.victory else "death",
+                    "cause": getattr(p, 'death_cause', 'unknown'),
+                    "hp": p.hp,
+                    "duration_s": report.get("game_time_s", 0),
+                    "stalls_recovered": self._ac_recovery.total_recoveries if hasattr(self, '_ac_recovery') else 0,
+                }
+                summary_text = summary_gen.generate(
+                    trace=self._ac_trace, coverage=self._ac_coverage,
+                    actions=self._ac_actions, game_stats=game_stats)
+                self._log("ac_summary", {"text": summary_text})
+                report["ac_summary"] = summary_text
+
+                # Coverage report
+                report["ac_coverage_pct"] = round(self._ac_coverage.coverage_pct(), 1)
+                report["ac_covered"] = self._ac_coverage.covered()
+                report["ac_uncovered"] = self._ac_coverage.uncovered()
+
+                # Action distribution
+                report["ac_action_dist"] = self._ac_actions.percentages()
+
+                # Death autopsy if not victory
+                if not gs.victory:
+                    autopsy_gen = DeathAutopsy()
+                    potions = sum(1 for i in p.inventory if i.item_type == "potion")
+                    food = sum(1 for i in p.inventory if i.item_type == "food")
+                    autopsy_text = autopsy_gen.generate(
+                        trace=self._ac_trace,
+                        final_state={
+                            "cause": getattr(p, 'death_cause', 'unknown'),
+                            "hp": p.hp, "potions": potions, "food": food,
+                            "mana": p.mana,
+                        })
+                    self._log("ac_autopsy", {"text": autopsy_text})
+                    report["ac_autopsy"] = autopsy_text
+
+                # Save coverage for cross-run analysis
+                cov_path = os.path.expanduser(f"~/.depths_of_dread_agent_traces/coverage_game_{self._game_id}.json")
+                self._ac_coverage.save(cov_path)
+            except Exception as e:
+                self._log("ac_error", {"error": str(e)[:200]})
+
         return report
 
     def _call_claude(self, state_text):
@@ -7747,7 +7842,21 @@ class AgentPlayer:
                         continue  # Retry
                     return None
 
-                parsed = self._parse_response(result.stdout)
+                # Use agent-commons validator if available, else legacy parser
+                parsed = None
+                if HAS_AGENT_COMMONS and self._ac_trace is not None:
+                    from agent_commons.reliability import ACTION_SCHEMA
+                    val_parsed, val_errors = self._ac_validator.validate(result.stdout, ACTION_SCHEMA)
+                    if val_parsed and not val_errors:
+                        parsed = val_parsed
+                    elif val_parsed and val_errors:
+                        # Partial parse — try legacy as fallback
+                        parsed = self._parse_response(result.stdout)
+                    else:
+                        parsed = self._parse_response(result.stdout)
+                else:
+                    parsed = self._parse_response(result.stdout)
+
                 self._log("claude_call", {
                     "latency": round(elapsed, 2),
                     "action": parsed.get("action") if parsed else None,
@@ -7755,6 +7864,17 @@ class AgentPlayer:
                     "state_preview": state_text[:120],
                     "attempt": attempt + 1,
                 })
+                # Agent-commons: log to decision trace
+                if HAS_AGENT_COMMONS and self._ac_trace is not None:
+                    trigger = self._trigger_counts.copy()
+                    last_trigger = max(trigger, key=trigger.get) if trigger else "unknown"
+                    self._ac_trace.log_decision(
+                        turn=0,  # Will be set by caller context
+                        trigger=last_trigger,
+                        parsed_action=parsed.get("action") if parsed else None,
+                        latency_ms=round(elapsed * 1000),
+                        fallback_used=parsed is None,
+                    )
                 if parsed:
                     return parsed
                 # Parseable failure — retry
@@ -7941,6 +8061,62 @@ class AgentPlayer:
 
         return None  # Unparseable
 
+    def _track_coverage(self, gs, action_str=""):
+        """Track feature coverage events from game state and action."""
+        if not HAS_AGENT_COMMONS or self._ac_trace is None:
+            return
+        p = gs.player
+        cov = self._ac_coverage
+        a = action_str.lower()
+        # Action-based coverage
+        if "potion" in a or "heal" in a:
+            cov.mark("used_potion")
+        if "eat" in a or "food" in a:
+            cov.mark("ate_food")
+        if "equip" in a and "weapon" in a:
+            cov.mark("equipped_weapon")
+        if "equip" in a and "armor" in a:
+            cov.mark("equipped_armor")
+        if "equip" in a and "ring" in a:
+            cov.mark("equipped_ring")
+        if "cast" in a or "spell" in a:
+            cov.mark("cast_spell")
+        if "fireball" in a:
+            cov.mark("cast_fireball")
+        if a in ("cast_heal", "heal"):
+            cov.mark("cast_heal")
+        if "lightning" in a:
+            cov.mark("cast_lightning")
+        if "teleport" in a:
+            cov.mark("cast_teleport")
+        if "pray" in a or "shrine" in a:
+            cov.mark("used_shrine")
+        if "alchemy" in a or "identify" in a:
+            cov.mark("used_alchemy_table")
+        if "torch" in a:
+            cov.mark("toggled_torch")
+        if "fire" in a and "ball" not in a:
+            cov.mark("fired_projectile")
+        if "scroll" in a:
+            cov.mark("used_scroll")
+        if "pickup" in a or "pick_up" in a:
+            cov.mark("picked_up_item")
+        if "search" in a or "trap" in a:
+            cov.mark("searched_for_traps")
+        if "disarm" in a:
+            cov.mark("disarmed_trap")
+        if "descend" in a:
+            cov.mark("descended_stairs")
+        # State-based coverage
+        if p.floor >= 5:
+            cov.mark("reached_floor_5")
+        if p.floor >= 10:
+            cov.mark("reached_floor_10")
+        if p.floor >= 15:
+            cov.mark("reached_floor_15")
+        if gs.active_branch:
+            cov.mark("entered_branch")
+
     def decide(self, gs):
         """Returns (action, params) — consults Claude for tactical decisions, BotPlayer otherwise."""
         p = gs.player
@@ -7961,13 +8137,48 @@ class AgentPlayer:
                 "kills": p.kills, "gold": p.gold,
                 "inventory": len(p.inventory),
             })
+            # Agent-commons: state snapshot at periodic intervals
+            if HAS_AGENT_COMMONS and self._ac_trace is not None:
+                if self._ac_snapshots.should_snapshot("periodic", gs.turn_count):
+                    self._ac_snapshots.save_snapshot({
+                        "turn": gs.turn_count, "floor": p.floor,
+                        "hp": p.hp, "max_hp": p.max_hp,
+                        "mana": p.mana, "hunger": round(p.hunger, 1),
+                        "kills": p.kills, "gold": p.gold,
+                        "inventory": len(p.inventory),
+                        "explored": round(self.bot._floor_explored_pct(gs), 2),
+                    }, "periodic", gs.turn_count)
 
         # Run health check periodically
         if gs.turn_count > 0 and gs.turn_count % self._health_interval == 0:
             self._health_check(gs)
 
+        # Agent-commons: stall detection (progress = floor * 1000 + kills)
+        ac_stalled = False
+        ac_repeated = False
+        if HAS_AGENT_COMMONS and self._ac_trace is not None:
+            progress = p.floor * 1000 + p.kills
+            ac_stalled = self._ac_stall.update(progress)
+
         if self._should_consult(gs):
+            # Agent-commons: check call budget
+            if HAS_AGENT_COMMONS and self._ac_trace is not None:
+                if not self._ac_budget.spend():
+                    # Budget exhausted — use bot only
+                    self._log("budget_exhausted", {"turn": gs.turn_count})
+                    action, params = self.bot.decide(gs)
+                    self.strategy = self.bot.strategy
+                    self.target_desc = self.bot.target_desc
+                    self._action_window.append(self.strategy)
+                    return (action, params)
+
             state_text = self._serialize_state(gs)
+            # Agent-commons: append novelty hint to state
+            if HAS_AGENT_COMMONS and self._ac_trace is not None:
+                hint = self._ac_novelty.generate_exploration_hint(self._ac_coverage)
+                if self._ac_coverage.coverage_pct() < 60:
+                    state_text += f"\n{hint}"
+
             self._thinking = True
             response = self._call_claude(state_text)
             self._thinking = False
@@ -7991,6 +8202,11 @@ class AgentPlayer:
                         self.strategy = "CLAUDE"
                     self.target_desc = response["action"]
                     self._action_window.append(self.strategy)
+                    # Agent-commons: record action + coverage
+                    if HAS_AGENT_COMMONS and self._ac_trace is not None:
+                        self._ac_actions.record(self.strategy)
+                        ac_repeated = self._ac_rep.record(self.strategy)
+                        self._track_coverage(gs, response["action"])
                     return (action, params)
 
             # Claude failed — fallback to bot
@@ -7998,11 +8214,31 @@ class AgentPlayer:
             self.reason = "(fallback to bot)"
             self._log("fallback", {"turn": gs.turn_count, "reason": "claude_failed"})
 
+        # Agent-commons: attempt stall recovery if stalled or repeating
+        if HAS_AGENT_COMMONS and self._ac_trace is not None and (ac_stalled or ac_repeated):
+            recovery_action = self._ac_recovery.attempt_recovery(
+                state_text=self._serialize_state(gs),
+                action_history=self._ac_rep.history,
+                call_fn=None,  # Skip LLM reflection for now — use random action
+            )
+            if recovery_action:
+                cmd = self._action_to_command(recovery_action, gs)
+                if cmd:
+                    self._log("ac_recovery", {"turn": gs.turn_count, "action": recovery_action})
+                    self.strategy = "RECOVERY"
+                    self.target_desc = f"recovery:{recovery_action}"
+                    self._action_window.append(self.strategy)
+                    return cmd
+
         # Non-triggered turn or fallback: use BotPlayer
         action, params = self.bot.decide(gs)
         self.strategy = self.bot.strategy
         self.target_desc = self.bot.target_desc
         self._action_window.append(self.strategy)
+        # Agent-commons: record bot action
+        if HAS_AGENT_COMMONS and self._ac_trace is not None:
+            self._ac_actions.record(self.strategy)
+            self._ac_rep.record(self.strategy)
         return (action, params)
 
 
