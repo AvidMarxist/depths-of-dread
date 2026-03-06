@@ -65,7 +65,7 @@ TORCH_RADIUS_FULL = 8    # fuel > 50%
 TORCH_RADIUS_HALF = 6    # fuel 25-50%
 TORCH_RADIUS_QUARTER = 4 # fuel 1-25%
 TORCH_RADIUS_EMPTY = 2   # fuel == 0
-MANA_REGEN_INTERVAL = 5  # regen 1 mana every N turns
+MANA_REGEN_INTERVAL = 3  # regen 1 mana every N turns (was 5)
 AUTO_FIGHT_HP_THRESHOLD = 0.3  # stop auto-fight when HP below 30% of max
 AUTO_EXPLORE_HP_THRESHOLD = 0.5  # stop auto-explore when HP below 50%
 REST_HUNGER_THRESHOLD = 20  # stop resting when hunger below 20%
@@ -85,9 +85,9 @@ BALANCE = {
     "item_weights": {
         "weapon": 14,
         "armor": 11,
-        "potion": 18,
-        "scroll": 14,
-        "food": 22,        # Bumped from 17 — food was too scarce
+        "potion": 12,      # was 18 — too many free heals
+        "scroll": 10,      # was 14
+        "food": 15,        # was 22 — food was overabundant
         "ring": 8,         # Combined both ring slots (was 6+2)
         "bow": 4,
         "arrow": 4,
@@ -100,14 +100,16 @@ BALANCE = {
     "items_base": 4,           # Base items per floor
     "items_per_floor": 1,      # Additional items per floor number
     "items_random_bonus": 3,   # Random 0..N extra items
-    "guaranteed_food_min": 2,  # Guaranteed food per floor (was 1)
-    "guaranteed_food_max": 3,  # Guaranteed food per floor (was 2)
+    "guaranteed_food_min": 1,  # Guaranteed food per floor (was 2)
+    "guaranteed_food_max": 2,  # Guaranteed food per floor (was 3)
 
     # --- Enemy Spawn Counts ---
     "enemies_base": 5,
     "enemies_per_floor": 2,
     "enemies_random_bonus": 3,
-    "enemy_hp_scale_per_floor": 0.1,  # +10% HP per floor beyond min
+    "enemy_hp_scale_per_floor": 0.18,  # +18% HP per floor beyond min (was 0.10)
+    "enemy_dmg_scale_per_floor": 0.08, # +8% damage per floor beyond min (NEW)
+    "enemy_def_scale_per_floor": 0.3,  # +0.3 defense per floor beyond min (NEW)
 
     # --- Hunger System ---
     "hunger_per_move": 0.12,       # Was 0.15 — slightly slower depletion
@@ -127,8 +129,8 @@ BALANCE = {
     "resistance_reduction": 2,     # Flat damage reduction from Resistance
 
     # --- Healing ---
-    "heal_potion_min": 15,
-    "heal_potion_max": 30,
+    "heal_potion_min": 10,    # was 15
+    "heal_potion_max": 20,    # was 30
     "heal_potion_level_scale": 2,  # +2 per level
     "heal_spell_min": 15,
     "heal_spell_max": 30,
@@ -158,13 +160,13 @@ BALANCE = {
 
     # --- Loot ---
     "enemy_item_drop_chance": 0.30,
-    "enemy_gold_drop_chance": 0.50,
-    "gold_drop_min": 3,
-    "gold_drop_max": 10,
-    "gold_per_floor_min": 5,      # Gold pile amounts
-    "gold_per_floor_max": 15,
-    "gold_piles_min": 2,
-    "gold_piles_max": 5,
+    "enemy_gold_drop_chance": 0.30,  # was 0.50
+    "gold_drop_min": 2,              # was 3
+    "gold_drop_max": 6,              # was 10
+    "gold_per_floor_min": 3,         # was 5
+    "gold_per_floor_max": 8,         # was 15
+    "gold_piles_min": 1,             # was 2
+    "gold_piles_max": 3,             # was 5
 
     # --- Shops ---
     "shop_items_min": 3,
@@ -261,6 +263,7 @@ BALANCE = {
     "trap_rogue_detect_bonus": 30,    # Rogue passive detect % bonus
     "trap_disarm_base": 40,           # Base disarm chance %
     "trap_disarm_dex_scale": 3,       # +3% per level for rogue
+    "trap_damage_scale_per_floor": 0.15,  # +15% trap damage per floor
 
     # --- Stealth / Noise System ---
     "noise_floor_walk": 2,            # Walking on floor tile
@@ -338,7 +341,7 @@ CHARACTER_CLASSES = {
         "crit_bonus": 0, "evasion_bonus": 0,
         "ability": "Battle Cry", "ability_desc": "Freeze all nearby enemies for 5 turns",
         "ability_cost": 8,
-        "level_hp": (5, 10), "level_mp": (1, 3), "level_str": 2, "level_def": 1,
+        "level_hp": (3, 7), "level_mp": (1, 3), "level_str": 1, "level_def": 1,
     },
     "mage": {
         "name": "Mage", "desc": "Glass cannon with powerful Arcane Blast",
@@ -346,7 +349,7 @@ CHARACTER_CLASSES = {
         "crit_bonus": 0, "evasion_bonus": 0,
         "ability": "Arcane Blast", "ability_desc": "3x3 AoE magical explosion at range",
         "ability_cost": 15,
-        "level_hp": (2, 5), "level_mp": (3, 7), "level_str": 1, "level_def": 0,
+        "level_hp": (3, 6), "level_mp": (3, 7), "level_str": 1, "level_def": 0,
     },
     "rogue": {
         "name": "Rogue", "desc": "Quick and deadly with Shadow Step",
@@ -620,8 +623,8 @@ ENEMY_TYPES = {
     "demon":       {"name": "Demon",        "char": 'D', "color": C_RED,     "hp": 55,  "dmg": (6,12), "defense": 5, "xp": 100,  "speed": 1.0, "ai": "chase",    "min_floor": 10, "max_floor": 15, "flee_threshold": 0.1, "damage_type": "fire", "resists": ["fire"], "vulnerable": ["cold"]},
     "lich":        {"name": "Lich",         "char": 'L', "color": C_MAGENTA, "hp": 50,  "dmg": (5,10), "defense": 4, "xp": 120,  "speed": 0.9, "ai": "summoner", "min_floor": 11, "max_floor": 15, "flee_threshold": 0.0, "damage_type": "cold", "resists": ["cold", "poison"]},
     "ogre_king":   {"name": "Ogre King",    "char": 'O', "color": C_BOSS,    "hp": 80,  "dmg": (6,14), "defense": 6, "xp": 200,  "speed": 0.7, "ai": "chase",    "min_floor": 5,  "max_floor": 5,  "boss": True, "flee_threshold": 0.0},
-    "vampire_lord":{"name": "Vampire Lord", "char": 'V', "color": C_BOSS,    "hp": 100, "dmg": (7,13), "defense": 5, "xp": 350,  "speed": 1.1, "ai": "ambush",   "min_floor": 10, "max_floor": 10, "boss": True, "lifesteal": True, "flee_threshold": 0.0},
-    "dread_lord":  {"name": "The Dread Lord","char": '&', "color": C_BOSS,    "hp": 200, "dmg": (10,20),"defense": 8, "xp": 1000, "speed": 1.0, "ai": "summoner", "min_floor": 15, "max_floor": 15, "boss": True, "regen": 2, "flee_threshold": 0.0},
+    "vampire_lord":{"name": "Vampire Lord", "char": 'V', "color": C_BOSS,    "hp": 150, "dmg": (9,16), "defense": 7, "xp": 350,  "speed": 1.1, "ai": "ambush",   "min_floor": 10, "max_floor": 10, "boss": True, "lifesteal": True, "flee_threshold": 0.0},
+    "dread_lord":  {"name": "The Dread Lord","char": '&', "color": C_BOSS,    "hp": 300, "dmg": (12,24),"defense": 12, "xp": 1000, "speed": 1.0, "ai": "summoner", "min_floor": 15, "max_floor": 15, "boss": True, "regen": 3, "flee_threshold": 0.0},
     # --- Phase 1 D&D Expansion Monsters ---
     "centipede":     {"name": "Centipede",      "char": 'c', "color": C_GREEN,   "hp": 8,   "dmg": (1,3),  "defense": 0, "xp": 8,    "speed": 1.3, "ai": "chase",       "min_floor": 1,  "max_floor": 4,  "poison_chance": 0.30, "flee_threshold": 0.4, "damage_type": "poison", "resists": ["poison"]},
     "mimic":         {"name": "Mimic",          "char": '$', "color": C_GOLD,    "hp": 22,  "dmg": (3,7),  "defense": 2, "xp": 45,   "speed": 1.0, "ai": "mimic",       "min_floor": 3,  "max_floor": 10, "disguised": True, "flee_threshold": 0.0},
@@ -941,16 +944,16 @@ class Player:
 
 # Level-up choice pool
 LEVELUP_CHOICES = [
-    {"name": "Might",     "desc": "+HP +STR",       "hp": 5,  "mp": 0, "str": 2, "def": 0, "evasion": 0},
+    {"name": "Might",     "desc": "+HP +STR",       "hp": 3,  "mp": 0, "str": 1, "def": 0, "evasion": 0},
     {"name": "Arcana",    "desc": "+MP, learn new spell", "hp": 0,  "mp": 5, "str": 0, "def": 0, "evasion": 0},
-    {"name": "Fortitude", "desc": "+HP +DEF",        "hp": 6,  "mp": 0, "str": 0, "def": 2, "evasion": 0},
+    {"name": "Fortitude", "desc": "+HP +DEF",        "hp": 4,  "mp": 0, "str": 0, "def": 1, "evasion": 0},
     {"name": "Agility",   "desc": "+evasion",        "hp": 2,  "mp": 0, "str": 0, "def": 0, "evasion": 5},
-    {"name": "Vitality",  "desc": "+big HP",         "hp": 12, "mp": 0, "str": 0, "def": 0, "evasion": 0},
+    {"name": "Vitality",  "desc": "+big HP",         "hp": 8,  "mp": 0, "str": 0, "def": 0, "evasion": 0},
 ]
 
 # Class-specific level-up bonuses (added to pool when class matches)
 CLASS_LEVELUP_CHOICES = {
-    "warrior": {"name": "Cleave",    "desc": "+STR +DEF, learn technique", "hp": 3, "mp": 0, "str": 3, "def": 1, "evasion": 0},
+    "warrior": {"name": "Cleave",    "desc": "+STR +DEF, learn technique", "hp": 2, "mp": 0, "str": 2, "def": 1, "evasion": 0},
     "mage":    {"name": "Mana Well", "desc": "+big MP (Mage)",              "hp": 0, "mp": 10,"str": 0, "def": 0, "evasion": 0},
     "rogue":   {"name": "Lethality", "desc": "+STR +evasion, learn technique","hp": 0, "mp": 2, "str": 2, "def": 0, "evasion": 5},
 }
@@ -1642,9 +1645,14 @@ class GameState:
             pos = self._find_spawn_pos()
             if pos:
                 e = Enemy(pos[0], pos[1], etype)
-                scale = 1.0 + (floor_num - ENEMY_TYPES[etype]["min_floor"]) * B["enemy_hp_scale_per_floor"]
+                floors_above_min = floor_num - ENEMY_TYPES[etype]["min_floor"]
+                scale = 1.0 + floors_above_min * B["enemy_hp_scale_per_floor"]
                 e.max_hp = int(e.max_hp * scale)
                 e.hp = e.max_hp
+                # Scale enemy damage and defense with floor depth
+                dmg_scale = 1.0 + floors_above_min * B["enemy_dmg_scale_per_floor"]
+                e.dmg = (int(e.dmg[0] * dmg_scale), max(int(e.dmg[1] * dmg_scale), int(e.dmg[0] * dmg_scale) + 1))
+                e.defense = int(e.defense + floors_above_min * B["enemy_def_scale_per_floor"])
                 # Stealth system: assign initial alertness
                 e.alertness = "asleep" if random.random() < B["asleep_spawn_chance"] else "unwary"
                 self.enemies.append(e)
@@ -1666,7 +1674,7 @@ class GameState:
         for _ in range(random.randint(B["gold_piles_min"], B["gold_piles_max"])):
             pos = self._find_spawn_pos()
             if pos:
-                amt = random.randint(B["gold_per_floor_min"], B["gold_per_floor_max"]) * floor_num
+                amt = random.randint(B["gold_per_floor_min"], B["gold_per_floor_max"]) * min(floor_num, 5)
                 self.items.append(Item(pos[0], pos[1], "gold", 0, {"amount": amt, "name": f"{amt} gold"}))
 
     def _random_item(self, x, y, floor_num):
@@ -1697,7 +1705,8 @@ class GameState:
             f = random.choice(FOOD_TYPES)
             return Item(x, y, "food", f["name"], f)
         elif item_type == "ring":
-            r = random.choice(RING_TYPES)
+            eligible = [r for r in RING_TYPES if r.get("min_floor", 0) <= floor_num]
+            r = random.choice(eligible) if eligible else random.choice(RING_TYPES[:5])
             return Item(x, y, "ring", r["name"], r)
         elif item_type == "bow":
             eligible = [b for b in BOW_TYPES if b["tier"] <= (floor_num//3)+1]
@@ -1747,13 +1756,14 @@ class GameState:
             item = self._random_item(rx+1, ry+1, floor_num)
             if item:
                 item.identified = True
-                price = (item.data.get("tier", 1)+1) * random.randint(20, 50)
+                floor_mult = 1 + floor_num * 0.1  # Prices scale +10% per floor
+                price = int((item.data.get("tier", 1)+1) * random.randint(20, 50) * floor_mult)
                 if item.item_type in ("potion", "scroll"):
-                    price = random.randint(15, 60)
+                    price = int(random.randint(15, 60) * floor_mult)
                 elif item.item_type == "food":
-                    price = random.randint(10, 25)
+                    price = int(random.randint(10, 25) * floor_mult)
                 elif item.item_type == "ring":
-                    price = random.randint(50, 120)
+                    price = int(random.randint(50, 120) * floor_mult)
                 shop_items.append(ShopItem(item, price))
         # Always stock healing and food
         heal = Item(0, 0, "potion", "Healing",
@@ -1887,7 +1897,7 @@ class GameState:
 
     def _place_traps(self, floor_num):
         """Place traps on floor tiles. Hidden overlay tracked in self.traps."""
-        count = min(6, B["trap_base_count"] + int(floor_num * B["trap_per_floor"]))
+        count = B["trap_base_count"] + int(floor_num * B["trap_per_floor"])
         eligible_traps = [k for k, v in TRAP_TYPES.items() if v["min_floor"] <= floor_num]
         if not eligible_traps:
             return
@@ -2026,7 +2036,7 @@ def _award_kill(gs, enemy, msg=None, drops=False):
             if item:
                 gs.items.append(item)
         if random.random() < B["enemy_gold_drop_chance"]:
-            amt = random.randint(B["gold_drop_min"], B["gold_drop_max"]) * p.floor
+            amt = random.randint(B["gold_drop_min"], B["gold_drop_max"]) * min(p.floor, 5)
             gs.items.append(Item(enemy.x, enemy.y, "gold", 0, {"amount": amt, "name": f"{amt} gold"}))
     return True
 
@@ -2044,7 +2054,8 @@ def _trigger_trap(gs, trap, target_name="You", target_hp_ref=None, is_player=Tru
     trap["triggered"] = True
     trap["visible"] = True
     lo, hi = tdata["damage"]
-    dmg = random.randint(lo, hi) if hi > 0 else 0
+    floor_scale = 1.0 + gs.player.floor * B["trap_damage_scale_per_floor"]
+    dmg = int(random.randint(lo, hi) * floor_scale) if hi > 0 else 0
 
     if is_player:
         p = gs.player

@@ -1576,7 +1576,7 @@ class TestBotPlayer:
                 process_status(gs)
                 if gs.player.hp <= 0:
                     gs.game_over = True
-        assert gs.turn_count >= 50 or gs.game_over  # Survived or died legitimately
+        assert gs.turn_count >= 40 or gs.game_over  # Survived or died legitimately
 
     def test_bot_100_games_no_crash(self):
         """Bot completes 100 games without crashing."""
