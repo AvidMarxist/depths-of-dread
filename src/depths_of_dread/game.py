@@ -85,9 +85,9 @@ BALANCE = {
     "item_weights": {
         "weapon": 14,
         "armor": 11,
-        "potion": 12,      # was 18 — too many free heals
+        "potion": 15,      # was 18, briefly 12 (too harsh early game)
         "scroll": 10,      # was 14
-        "food": 15,        # was 22 — food was overabundant
+        "food": 20,        # was 22, briefly 15 (too harsh — floor 1-2 starvation)
         "ring": 8,         # Combined both ring slots (was 6+2)
         "bow": 4,
         "arrow": 4,
@@ -100,8 +100,8 @@ BALANCE = {
     "items_base": 4,           # Base items per floor
     "items_per_floor": 1,      # Additional items per floor number
     "items_random_bonus": 3,   # Random 0..N extra items
-    "guaranteed_food_min": 1,  # Guaranteed food per floor (was 2)
-    "guaranteed_food_max": 2,  # Guaranteed food per floor (was 3)
+    "guaranteed_food_min": 2,  # Restored from 1 — floor 1-2 starvation
+    "guaranteed_food_max": 3,  # Restored from 2
 
     # --- Enemy Spawn Counts ---
     "enemies_base": 5,
@@ -612,9 +612,9 @@ ARROW_ITEM = {"name": "Arrow", "char": '|', "count": 5, "desc": "A bundle of arr
 # ============================================================
 
 ENEMY_TYPES = {
-    "rat":         {"name": "Rat",          "char": 'r', "color": C_DARK,    "hp": 6,   "dmg": (1,3),  "defense": 0, "xp": 5,    "speed": 1.2, "ai": "chase",    "min_floor": 1,  "max_floor": 5,  "flee_threshold": 0.3},
-    "bat":         {"name": "Bat",          "char": 'b', "color": C_MAGENTA, "hp": 4,   "dmg": (1,2),  "defense": 0, "xp": 3,    "speed": 1.5, "ai": "erratic",  "min_floor": 1,  "max_floor": 6,  "flee_threshold": 0.4},
-    "goblin":      {"name": "Goblin",       "char": 'g', "color": C_GREEN,   "hp": 12,  "dmg": (2,5),  "defense": 1, "xp": 15,   "speed": 1.0, "ai": "chase",    "min_floor": 1,  "max_floor": 8,  "flee_threshold": 0.3},
+    "rat":         {"name": "Rat",          "char": 'r', "color": C_DARK,    "hp": 6,   "dmg": (1,3),  "defense": 0, "xp": 5,    "speed": 1.2, "ai": "chase",    "min_floor": 1,  "max_floor": 5,  "flee_threshold": 0.15},
+    "bat":         {"name": "Bat",          "char": 'b', "color": C_MAGENTA, "hp": 4,   "dmg": (1,2),  "defense": 0, "xp": 3,    "speed": 1.5, "ai": "erratic",  "min_floor": 1,  "max_floor": 6,  "flee_threshold": 0.2},
+    "goblin":      {"name": "Goblin",       "char": 'g', "color": C_GREEN,   "hp": 12,  "dmg": (2,5),  "defense": 1, "xp": 15,   "speed": 1.0, "ai": "chase",    "min_floor": 1,  "max_floor": 8,  "flee_threshold": 0.15},
     "skeleton":    {"name": "Skeleton",     "char": 's', "color": C_WHITE,   "hp": 18,  "dmg": (3,6),  "defense": 2, "xp": 25,   "speed": 0.8, "ai": "patrol",   "min_floor": 3,  "max_floor": 10, "flee_threshold": 0.0},
     "orc":         {"name": "Orc",          "char": 'o', "color": C_RED,     "hp": 25,  "dmg": (3,8),  "defense": 3, "xp": 35,   "speed": 0.9, "ai": "pack",     "min_floor": 4,  "max_floor": 11, "flee_threshold": 0.2},
     "wraith":      {"name": "Wraith",       "char": 'W', "color": C_CYAN,    "hp": 30,  "dmg": (4,8),  "defense": 2, "xp": 50,   "speed": 1.0, "ai": "ambush",   "min_floor": 6,  "max_floor": 13, "flee_threshold": 0.0, "damage_type": "cold", "resists": ["cold", "poison"], "vulnerable": ["fire"]},
@@ -626,7 +626,7 @@ ENEMY_TYPES = {
     "vampire_lord":{"name": "Vampire Lord", "char": 'V', "color": C_BOSS,    "hp": 150, "dmg": (9,16), "defense": 7, "xp": 350,  "speed": 1.1, "ai": "ambush",   "min_floor": 10, "max_floor": 10, "boss": True, "lifesteal": True, "flee_threshold": 0.0},
     "dread_lord":  {"name": "The Dread Lord","char": '&', "color": C_BOSS,    "hp": 300, "dmg": (12,24),"defense": 12, "xp": 1000, "speed": 1.0, "ai": "summoner", "min_floor": 15, "max_floor": 15, "boss": True, "regen": 3, "flee_threshold": 0.0},
     # --- Phase 1 D&D Expansion Monsters ---
-    "centipede":     {"name": "Centipede",      "char": 'c', "color": C_GREEN,   "hp": 8,   "dmg": (1,3),  "defense": 0, "xp": 8,    "speed": 1.3, "ai": "chase",       "min_floor": 1,  "max_floor": 4,  "poison_chance": 0.30, "flee_threshold": 0.4, "damage_type": "poison", "resists": ["poison"]},
+    "centipede":     {"name": "Centipede",      "char": 'c', "color": C_GREEN,   "hp": 8,   "dmg": (1,3),  "defense": 0, "xp": 8,    "speed": 1.3, "ai": "chase",       "min_floor": 1,  "max_floor": 4,  "poison_chance": 0.30, "flee_threshold": 0.2, "damage_type": "poison", "resists": ["poison"]},
     "mimic":         {"name": "Mimic",          "char": '$', "color": C_GOLD,    "hp": 22,  "dmg": (3,7),  "defense": 2, "xp": 45,   "speed": 1.0, "ai": "mimic",       "min_floor": 3,  "max_floor": 10, "disguised": True, "flee_threshold": 0.0},
     "phase_spider":  {"name": "Phase Spider",   "char": 'S', "color": C_MAGENTA, "hp": 20,  "dmg": (3,6),  "defense": 1, "xp": 40,   "speed": 1.1, "ai": "phase",       "min_floor": 5,  "max_floor": 11, "poison_chance": 0.40, "phase_cooldown_max": 3, "flee_threshold": 0.25, "damage_type": "poison", "resists": ["poison"]},
     "fire_elemental":{"name": "Fire Elemental", "char": 'E', "color": C_LAVA,    "hp": 35,  "dmg": (4,9),  "defense": 3, "xp": 65,   "speed": 0.9, "ai": "chase",       "min_floor": 8,  "max_floor": 13, "fire_aura": True, "flee_threshold": 0.0, "damage_type": "fire", "resists": ["fire"], "vulnerable": ["cold"]},
@@ -6417,7 +6417,11 @@ def game_loop(scr):
             # Toggle torch on/off to conserve fuel
             p = gs.player
             if p.torch_fuel <= 0:
-                gs.msg("No torch fuel to light!", C_RED)
+                has_torches = any(i.item_type == "torch" for i in p.inventory)
+                if has_torches:
+                    gs.msg("No fuel! Use a torch from inventory (i) to refuel.", C_RED)
+                else:
+                    gs.msg("No torch fuel! Grab wall torches (,) or find torch items.", C_RED)
             else:
                 p.torch_lit = not p.torch_lit
                 if p.torch_lit:
@@ -6479,9 +6483,9 @@ def game_loop(scr):
                         gs.tiles[ty][tx] = T_WALL
                         if (tx, ty) in gs.wall_torches:
                             gs.wall_torches.remove((tx, ty))
-                        torch_item = Item(0, 0, "torch", "Torch", {"name": "Torch", "char": '(', "fuel": 60, "desc": "Taken from a wall."})
-                        gs.player.inventory.append(torch_item)
-                        gs.msg("You take a torch from the wall.", C_YELLOW)
+                        fuel = 60
+                        gs.player.torch_fuel = min(TORCH_MAX_FUEL, gs.player.torch_fuel + fuel)
+                        gs.msg(f"You grab a wall torch and refuel! (+{fuel} fuel)", C_YELLOW)
                         grabbed_torch = True
                         break
                 turn_spent = grabbed_torch or bool(pickup)
@@ -7924,6 +7928,19 @@ class AgentPlayer:
             # Remove first line (```json) and last line (```)
             lines = [l for l in lines if not l.strip().startswith("```")]
             inner = "\n".join(lines).strip()
+
+        # Extract first JSON object — Haiku often appends analysis text after the JSON
+        brace_start = inner.find("{")
+        if brace_start >= 0:
+            depth = 0
+            for i, ch in enumerate(inner[brace_start:], brace_start):
+                if ch == "{":
+                    depth += 1
+                elif ch == "}":
+                    depth -= 1
+                    if depth == 0:
+                        inner = inner[brace_start:i + 1]
+                        break
 
         try:
             data = json.loads(inner)

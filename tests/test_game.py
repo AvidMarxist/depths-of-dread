@@ -25,8 +25,8 @@ import importlib
 from unittest.mock import MagicMock, patch
 from collections import deque
 
-# Add src directory to path for package imports
-sys.path.insert(0, os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "src"))
+# Import game module
+sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 from depths_of_dread import game as dungeon
 from depths_of_dread.game import (
     GameState, Player, Enemy, Item, BSPNode, ShopItem,
@@ -4259,12 +4259,12 @@ class TestMonsterFleeing:
         gs = GameState(headless=True)
         gs.generate_floor(1)
         p = gs.player
-        e = Enemy(p.x + 3, p.y, "rat")
+        e = Enemy(p.x + 3, p.y, "goblin")
         e.alerted = True  # Must be alerted to process AI
         e.energy = 1.0    # Enough energy to act
         gs.enemies = [e]
-        # Rat flees at 30% HP — set HP to threshold
-        e.hp = int(e.max_hp * e.flee_threshold)
+        # Goblin flees at 15% HP — set HP just at boundary
+        e.hp = max(1, int(e.max_hp * e.flee_threshold))
         assert not e.fleeing
         # Ensure enemy is in FOV
         gs.visible = {(e.x, e.y)}
