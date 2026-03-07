@@ -56,7 +56,7 @@ VIEW_W = 58
 VIEW_H = 20
 MSG_H = 3
 STAT_X = 59
-MAX_FLOORS = 15
+MAX_FLOORS = 20
 MAX_MESSAGES = 50
 FOV_RADIUS = 8
 MAX_INVENTORY = 20
@@ -205,6 +205,43 @@ BALANCE = {
     "poison_duration": 8,
     "paralysis_duration": 3,
     "fear_duration": 6,
+
+    # --- Expansion Status Effects ---
+    "bleed_damage_per_tick": 1,
+    "bleed_duration": 6,
+    "bleed_max_stacks": 5,
+    "frozen_status_duration": 2,
+    "frozen_shatter_bonus": 2.0,
+    "silence_duration": 8,
+    "blindness_fov_override": 1,
+
+    # --- Boss Phase Thresholds ---
+    "boss_phase2_threshold": 0.50,
+    "boss_phase3_threshold": 0.25,
+    "vampire_phase2_lifesteal_mult": 2.0,
+    "vampire_phase3_bat_interval": 4,
+    "dread_phase2_dmg_mult": 2.0,
+    "dread_phase3_aoe_damage": 5,
+    "mini_boss_phase2_threshold": 0.40,
+    # --- Apex Enemy Balance ---
+    "apex_spawn_chance": 0.15,           # Chance for apex enemy on eligible floors
+    "breath_weapon_damage_base": 12,
+    "breath_weapon_damage_per_floor": 2,
+    "stun_duration": 2,
+    "hydra_multi_attack_dmg_mult": 0.6,  # Each hydra head does 60% damage
+    # --- Branch Floor Mechanics ---
+    "flooded_crypts_water_dmg": 1,       # Cold damage per turn in water
+    "burning_pits_lava_proximity": 2,    # Lava hurts at this Manhattan distance
+    "burning_pits_heat_dmg": 2,          # Heat damage per turn near lava
+    "mind_halls_confusion_chance": 0.08, # Per-turn confusion chance in Mind Halls
+    "beast_warrens_trap_detect_penalty": 4, # Harder to detect traps
+    # --- Puzzle Room Rewards ---
+    "puzzle_room_gold_min": 30,
+    "puzzle_room_gold_max": 80,
+    # --- Enchantment System ---
+    "enchant_gold_cost": 100,
+    "enchant_anvil_min_floor": 6,
+    "enchant_anvil_chance": 0.20,
 
     # --- Mage-Exclusive Spells ---
     "chain_lightning_min": 10,
@@ -381,6 +418,7 @@ T_SWITCH_ON = 15
 T_STAIRS_LOCKED = 16
 T_TRAP_HIDDEN = 17    # Invisible trap (renders as T_FLOOR)
 T_TRAP_VISIBLE = 18   # Revealed trap (renders as '^')
+T_ENCHANT_ANVIL = 19  # Enchanting station (Phase 4)
 
 TILE_CHARS = {
     T_WALL: '#', T_FLOOR: '.', T_CORRIDOR: '.', T_DOOR: '+',
@@ -392,12 +430,13 @@ TILE_CHARS = {
     T_STAIRS_LOCKED: 'X',
     T_TRAP_HIDDEN: '.',   # Looks like floor
     T_TRAP_VISIBLE: '^',  # Revealed trap
+    T_ENCHANT_ANVIL: '&', # Enchanting station
 }
 
 WALKABLE = {T_FLOOR, T_CORRIDOR, T_DOOR, T_STAIRS_DOWN, T_STAIRS_UP,
             T_WATER, T_SHOP_FLOOR, T_SHRINE, T_ALCHEMY_TABLE,
             T_PEDESTAL_UNLIT, T_PEDESTAL_LIT, T_SWITCH_OFF, T_SWITCH_ON,
-            T_TRAP_HIDDEN, T_TRAP_VISIBLE}
+            T_TRAP_HIDDEN, T_TRAP_VISIBLE, T_ENCHANT_ANVIL}
 
 THEMES = [
     "Dungeon", "Dungeon", "Dungeon",
@@ -405,6 +444,10 @@ THEMES = [
     "Catacombs", "Catacombs", "Catacombs",
     "Hellvault", "Hellvault", "Hellvault",
     "Abyss", "Abyss", "The Throne of Dread",
+    # Post-boss Abyss floors (Phase 4)
+    "The Shattered Depths", "The Void Between",
+    "The Forgotten Realm", "The Final Descent",
+    "The Heart of Darkness",
 ]
 
 # Dungeon Branch system — branching paths at floors 5 and 10
@@ -455,12 +498,60 @@ BRANCH_DEFS = {
         "mini_boss_floor": 13,
         "mini_boss": "beast_lord",
     },
+    # --- Phase 3 New Branch Pairs ---
+    "fungal_depths": {
+        "name": "The Fungal Depths",
+        "desc": "Poisonous spores, mushroom enemies, low visibility",
+        "theme": "Fungal Depths",
+        "floors": (3, 4),
+        "water_boost": 1.0,
+        "lava_boost": 0.0,
+        "enemy_pool": ["centipede", "rat", "phase_spider"],
+        "mini_boss_floor": 4,
+        "mini_boss": "fungal_queen",
+    },
+    "trapped_halls": {
+        "name": "The Trapped Halls",
+        "desc": "Dense traps, mechanical enemies, hidden passages",
+        "theme": "Trapped Halls",
+        "floors": (3, 4),
+        "water_boost": 0.0,
+        "lava_boost": 0.0,
+        "enemy_pool": ["goblin", "skeleton", "archer"],
+        "extra_traps": 5,
+        "mini_boss_floor": 4,
+        "mini_boss": "trap_master",
+    },
+    "void_rift": {
+        "name": "The Void Rift",
+        "desc": "Reality tears, psychic storms, teleporting enemies",
+        "theme": "Void Rift",
+        "floors": (14,),
+        "water_boost": 0.5,
+        "lava_boost": 0.5,
+        "enemy_pool": ["mind_flayer", "wraith", "phase_spider", "shadow_wyrm"],
+        "mini_boss_floor": 14,
+        "mini_boss": "void_herald",
+    },
+    "infernal_forge": {
+        "name": "The Infernal Forge",
+        "desc": "Molten metal, fire damage, powerful but slow enemies",
+        "theme": "Infernal Forge",
+        "floors": (14,),
+        "water_boost": 0.0,
+        "lava_boost": 4.0,
+        "enemy_pool": ["demon", "fire_elemental", "troll", "ancient_dragon"],
+        "mini_boss_floor": 14,
+        "mini_boss": "inferno_king",
+    },
 }
 
 # Branch choice mapping: floor → (branch_A, branch_B)
 BRANCH_CHOICES = {
+    2: ("fungal_depths", "trapped_halls"),
     5: ("flooded_crypts", "burning_pits"),
     10: ("mind_halls", "beast_warrens"),
+    13: ("void_rift", "infernal_forge"),
 }
 
 # ============================================================
@@ -482,6 +573,9 @@ C_UI = 13
 C_TITLE = 14
 C_BOSS = 15
 C_SHRINE = 16
+
+# Challenge mode configuration (Phase 4)
+_CHALLENGE_MODES = {"ironman": False, "speedrun": False, "pacifist": False, "dark": False}
 
 HAS_COLORS = True  # set at runtime by init_colors
 
@@ -548,6 +642,7 @@ BOSS_DROPS = {
     "ogre_king": {"name": "Ogre King's Maul", "char": ')', "dmg": (8,16), "speed": 0.6, "bonus": 2, "desc": "Massive and devastating.", "tier": 5},
     "vampire_lord": {"name": "Vampiric Blade", "char": ')', "dmg": (6,14), "speed": 1.1, "bonus": 3, "desc": "Drains life with each strike.", "tier": 5, "lifesteal": True},
     "dread_lord": {"name": "Dread Lord's Bane", "char": ')', "dmg": (10,20), "speed": 1.0, "bonus": 5, "desc": "Forged from pure dread.", "tier": 5},
+    "abyssal_horror": {"name": "Void Reaver", "char": ')', "dmg": (14,28), "speed": 1.0, "bonus": 7, "desc": "A blade forged from collapsed reality.", "tier": 6},
 }
 
 ARMOR_TYPES = [
@@ -616,27 +711,44 @@ ENEMY_TYPES = {
     "bat":         {"name": "Bat",          "char": 'b', "color": C_MAGENTA, "hp": 4,   "dmg": (1,2),  "defense": 0, "xp": 3,    "speed": 1.5, "ai": "erratic",  "min_floor": 1,  "max_floor": 6,  "flee_threshold": 0.2},
     "goblin":      {"name": "Goblin",       "char": 'g', "color": C_GREEN,   "hp": 12,  "dmg": (2,5),  "defense": 1, "xp": 15,   "speed": 1.0, "ai": "chase",    "min_floor": 1,  "max_floor": 8,  "flee_threshold": 0.15},
     "skeleton":    {"name": "Skeleton",     "char": 's', "color": C_WHITE,   "hp": 18,  "dmg": (3,6),  "defense": 2, "xp": 25,   "speed": 0.8, "ai": "patrol",   "min_floor": 3,  "max_floor": 10, "flee_threshold": 0.0},
-    "orc":         {"name": "Orc",          "char": 'o', "color": C_RED,     "hp": 25,  "dmg": (3,8),  "defense": 3, "xp": 35,   "speed": 0.9, "ai": "pack",     "min_floor": 4,  "max_floor": 11, "flee_threshold": 0.2},
-    "wraith":      {"name": "Wraith",       "char": 'W', "color": C_CYAN,    "hp": 30,  "dmg": (4,8),  "defense": 2, "xp": 50,   "speed": 1.0, "ai": "ambush",   "min_floor": 6,  "max_floor": 13, "flee_threshold": 0.0, "damage_type": "cold", "resists": ["cold", "poison"], "vulnerable": ["fire"]},
+    "orc":         {"name": "Orc",          "char": 'o', "color": C_RED,     "hp": 25,  "dmg": (3,8),  "defense": 3, "xp": 35,   "speed": 0.9, "ai": "pack",     "min_floor": 4,  "max_floor": 11, "flee_threshold": 0.2, "bleed_chance": 0.20},
+    "wraith":      {"name": "Wraith",       "char": 'W', "color": C_CYAN,    "hp": 30,  "dmg": (4,8),  "defense": 2, "xp": 50,   "speed": 1.0, "ai": "ambush",   "min_floor": 6,  "max_floor": 13, "flee_threshold": 0.0, "damage_type": "cold", "resists": ["cold", "poison"], "vulnerable": ["fire"], "freeze_status_chance": 0.25},
     "archer":      {"name": "Dark Archer",  "char": 'A', "color": C_YELLOW,  "hp": 20,  "dmg": (3,7),  "defense": 1, "xp": 40,   "speed": 1.0, "ai": "ranged",   "min_floor": 5,  "max_floor": 12, "flee_threshold": 0.35},
-    "troll":       {"name": "Troll",        "char": 'T', "color": C_GREEN,   "hp": 45,  "dmg": (5,10), "defense": 4, "xp": 70,   "speed": 0.6, "ai": "chase",    "min_floor": 7,  "max_floor": 14, "regen": 1, "flee_threshold": 0.15, "vulnerable": ["fire"]},
+    "troll":       {"name": "Troll",        "char": 'T', "color": C_GREEN,   "hp": 45,  "dmg": (5,10), "defense": 4, "xp": 70,   "speed": 0.6, "ai": "chase",    "min_floor": 7,  "max_floor": 14, "regen": 1, "flee_threshold": 0.15, "vulnerable": ["fire"], "bleed_chance": 0.30},
     "demon":       {"name": "Demon",        "char": 'D', "color": C_RED,     "hp": 55,  "dmg": (6,12), "defense": 5, "xp": 100,  "speed": 1.0, "ai": "chase",    "min_floor": 10, "max_floor": 15, "flee_threshold": 0.1, "damage_type": "fire", "resists": ["fire"], "vulnerable": ["cold"]},
     "lich":        {"name": "Lich",         "char": 'L', "color": C_MAGENTA, "hp": 50,  "dmg": (5,10), "defense": 4, "xp": 120,  "speed": 0.9, "ai": "summoner", "min_floor": 11, "max_floor": 15, "flee_threshold": 0.0, "damage_type": "cold", "resists": ["cold", "poison"]},
     "ogre_king":   {"name": "Ogre King",    "char": 'O', "color": C_BOSS,    "hp": 80,  "dmg": (6,14), "defense": 6, "xp": 200,  "speed": 0.7, "ai": "chase",    "min_floor": 5,  "max_floor": 5,  "boss": True, "flee_threshold": 0.0},
     "vampire_lord":{"name": "Vampire Lord", "char": 'V', "color": C_BOSS,    "hp": 150, "dmg": (9,16), "defense": 7, "xp": 350,  "speed": 1.1, "ai": "ambush",   "min_floor": 10, "max_floor": 10, "boss": True, "lifesteal": True, "flee_threshold": 0.0},
     "dread_lord":  {"name": "The Dread Lord","char": '&', "color": C_BOSS,    "hp": 300, "dmg": (12,24),"defense": 12, "xp": 1000, "speed": 1.0, "ai": "summoner", "min_floor": 15, "max_floor": 15, "boss": True, "regen": 3, "flee_threshold": 0.0},
+    # Phase 4: Abyss Final Boss (floor 20)
+    "abyssal_horror":{"name": "The Abyssal Horror","char": '&', "color": C_BOSS, "hp": 500, "dmg": (15,30),"defense": 15, "xp": 2000, "speed": 1.0, "ai": "summoner", "min_floor": 20, "max_floor": 20, "boss": True, "regen": 5, "flee_threshold": 0.0, "damage_type": "cold", "resists": ["fire", "cold", "poison"], "paralyze_chance": 0.20, "psychic_range": 8},
     # --- Phase 1 D&D Expansion Monsters ---
     "centipede":     {"name": "Centipede",      "char": 'c', "color": C_GREEN,   "hp": 8,   "dmg": (1,3),  "defense": 0, "xp": 8,    "speed": 1.3, "ai": "chase",       "min_floor": 1,  "max_floor": 4,  "poison_chance": 0.30, "flee_threshold": 0.2, "damage_type": "poison", "resists": ["poison"]},
     "mimic":         {"name": "Mimic",          "char": '$', "color": C_GOLD,    "hp": 22,  "dmg": (3,7),  "defense": 2, "xp": 45,   "speed": 1.0, "ai": "mimic",       "min_floor": 3,  "max_floor": 10, "disguised": True, "flee_threshold": 0.0},
     "phase_spider":  {"name": "Phase Spider",   "char": 'S', "color": C_MAGENTA, "hp": 20,  "dmg": (3,6),  "defense": 1, "xp": 40,   "speed": 1.1, "ai": "phase",       "min_floor": 5,  "max_floor": 11, "poison_chance": 0.40, "phase_cooldown_max": 3, "flee_threshold": 0.25, "damage_type": "poison", "resists": ["poison"]},
     "fire_elemental":{"name": "Fire Elemental", "char": 'E', "color": C_LAVA,    "hp": 35,  "dmg": (4,9),  "defense": 3, "xp": 65,   "speed": 0.9, "ai": "chase",       "min_floor": 8,  "max_floor": 13, "fire_aura": True, "flee_threshold": 0.0, "damage_type": "fire", "resists": ["fire"], "vulnerable": ["cold"]},
     "banshee":       {"name": "Banshee",        "char": 'B', "color": C_CYAN,    "hp": 28,  "dmg": (4,8),  "defense": 2, "xp": 55,   "speed": 1.0, "ai": "ambush",      "min_floor": 7,  "max_floor": 12, "fear_chance": 0.50, "flee_threshold": 0.0, "damage_type": "cold", "resists": ["cold"], "vulnerable": ["fire"]},
-    "mind_flayer":   {"name": "Mind Flayer",    "char": 'M', "color": C_MAGENTA, "hp": 60,  "dmg": (5,11), "defense": 5, "xp": 130,  "speed": 0.9, "ai": "mind_flayer", "min_floor": 12, "max_floor": 15, "paralyze_chance": 0.30, "psychic_range": 6, "flee_threshold": 0.15, "resists": ["poison"]},
+    "mind_flayer":   {"name": "Mind Flayer",    "char": 'M', "color": C_MAGENTA, "hp": 60,  "dmg": (5,11), "defense": 5, "xp": 130,  "speed": 0.9, "ai": "mind_flayer", "min_floor": 12, "max_floor": 15, "paralyze_chance": 0.30, "psychic_range": 6, "flee_threshold": 0.15, "resists": ["poison"], "silence_chance": 0.25},
     # --- Branch Mini-Bosses ---
     "crypt_guardian":{"name": "Crypt Guardian", "char": 'G', "color": C_BOSS,  "hp": 90,  "dmg": (6,12), "defense": 6, "xp": 180,  "speed": 0.8, "ai": "chase",    "min_floor": 8,  "max_floor": 8,  "boss": True, "flee_threshold": 0.0, "damage_type": "cold", "resists": ["cold", "poison"], "vulnerable": ["fire"]},
     "flame_tyrant":  {"name": "Flame Tyrant",  "char": 'F', "color": C_BOSS,  "hp": 95,  "dmg": (7,14), "defense": 5, "xp": 190,  "speed": 0.9, "ai": "chase",    "min_floor": 8,  "max_floor": 8,  "boss": True, "flee_threshold": 0.0, "fire_aura": True, "damage_type": "fire", "resists": ["fire"], "vulnerable": ["cold"]},
     "elder_brain":   {"name": "Elder Brain",   "char": 'B', "color": C_BOSS,  "hp": 110, "dmg": (6,13), "defense": 7, "xp": 220,  "speed": 0.7, "ai": "mind_flayer", "min_floor": 13, "max_floor": 13, "boss": True, "flee_threshold": 0.0, "paralyze_chance": 0.40, "psychic_range": 8, "resists": ["poison"]},
     "beast_lord":    {"name": "Beast Lord",    "char": 'B', "color": C_BOSS,  "hp": 100, "dmg": (7,15), "defense": 5, "xp": 200,  "speed": 1.2, "ai": "pack",     "min_floor": 13, "max_floor": 13, "boss": True, "flee_threshold": 0.0},
+    # --- Phase 3 Branch Mini-Bosses ---
+    "fungal_queen":  {"name": "Fungal Queen",  "char": 'Q', "color": C_GREEN,   "hp": 70,  "dmg": (4,9),  "defense": 4, "xp": 140,  "speed": 0.7, "ai": "summoner", "min_floor": 4,  "max_floor": 4,  "boss": True, "flee_threshold": 0.0, "poison_chance": 0.40, "damage_type": "poison", "resists": ["poison"]},
+    "trap_master":   {"name": "Trap Master",   "char": 'X', "color": C_YELLOW,  "hp": 65,  "dmg": (5,10), "defense": 3, "xp": 130,  "speed": 1.1, "ai": "ranged",   "min_floor": 4,  "max_floor": 4,  "boss": True, "flee_threshold": 0.0},
+    "void_herald":   {"name": "Void Herald",   "char": 'V', "color": C_MAGENTA, "hp": 180, "dmg": (10,18),"defense": 10,"xp": 400,  "speed": 1.0, "ai": "mind_flayer","min_floor": 14,"max_floor": 14, "boss": True, "flee_threshold": 0.0, "paralyze_chance": 0.35, "psychic_range": 7, "resists": ["cold", "poison"]},
+    "inferno_king":  {"name": "Inferno King",  "char": 'K', "color": C_LAVA,    "hp": 190, "dmg": (11,20),"defense": 9, "xp": 420,  "speed": 0.9, "ai": "chase",    "min_floor": 14, "max_floor": 14, "boss": True, "flee_threshold": 0.0, "fire_aura": True, "damage_type": "fire", "resists": ["fire"], "vulnerable": ["cold"]},
+    # --- Phase 2 Apex Enemies (rare, powerful late-game) ---
+    "ancient_dragon":{"name": "Ancient Dragon", "char": 'D', "color": C_LAVA,    "hp": 200, "dmg": (10,20), "defense": 10, "xp": 500,  "speed": 0.8, "ai": "chase",    "min_floor": 12, "max_floor": 15, "flee_threshold": 0.0, "fire_aura": True, "breath_weapon": "fire", "breath_range": 5, "breath_cooldown_max": 4, "damage_type": "fire", "resists": ["fire"], "vulnerable": ["cold"], "apex": True},
+    "hydra":         {"name": "Hydra",          "char": 'H', "color": C_GREEN,   "hp": 180, "dmg": (8,16),  "defense": 7,  "xp": 450,  "speed": 0.7, "ai": "chase",    "min_floor": 11, "max_floor": 15, "flee_threshold": 0.0, "regen": 3, "multi_attack": 3, "damage_type": "poison", "resists": ["poison"], "vulnerable": ["fire"], "apex": True},
+    "shadow_wyrm":   {"name": "Shadow Wyrm",    "char": 'Y', "color": C_DARK,    "hp": 160, "dmg": (9,18),  "defense": 8,  "xp": 480,  "speed": 1.1, "ai": "phase",    "min_floor": 12, "max_floor": 15, "flee_threshold": 0.0, "phase_cooldown_max": 2, "damage_type": "cold", "resists": ["cold", "poison"], "apex": True},
+    "stone_colossus":{"name": "Stone Colossus", "char": 'C', "color": C_WHITE,   "hp": 250, "dmg": (12,22), "defense": 15, "xp": 550,  "speed": 0.4, "ai": "chase",    "min_floor": 13, "max_floor": 15, "flee_threshold": 0.0, "resists": ["fire", "cold", "poison"], "stun_on_hit": 0.25, "apex": True},
+    # Phase 4: Abyss enemies (floors 16-20)
+    "void_stalker":  {"name": "Void Stalker",  "char": 'v', "color": C_DARK,    "hp": 80,  "dmg": (8,16), "defense": 8,  "xp": 160,  "speed": 1.3, "ai": "ambush",   "min_floor": 16, "max_floor": 20, "flee_threshold": 0.0, "damage_type": "cold", "resists": ["cold"]},
+    "chaos_spawn":   {"name": "Chaos Spawn",   "char": 'c', "color": C_MAGENTA, "hp": 100, "dmg": (9,18), "defense": 7,  "xp": 180,  "speed": 1.0, "ai": "erratic",  "min_floor": 16, "max_floor": 20, "flee_threshold": 0.0, "poison_chance": 0.30, "fear_chance": 0.20, "resists": ["poison"]},
+    "abyss_knight":  {"name": "Abyss Knight",  "char": 'K', "color": C_RED,     "hp": 120, "dmg": (10,20),"defense": 10, "xp": 220,  "speed": 0.9, "ai": "chase",    "min_floor": 17, "max_floor": 20, "flee_threshold": 0.0, "bleed_chance": 0.35, "resists": ["fire"]},
+    "entropy_mage":  {"name": "Entropy Mage",  "char": 'E', "color": C_CYAN,    "hp": 90,  "dmg": (8,15), "defense": 6,  "xp": 200,  "speed": 0.8, "ai": "ranged",   "min_floor": 17, "max_floor": 20, "flee_threshold": 0.0, "silence_chance": 0.30, "damage_type": "cold", "resists": ["cold", "fire"]},
 }
 
 TRAP_TYPES = {
@@ -646,6 +758,100 @@ TRAP_TYPES = {
     "teleport": {"name": "Teleport Trap", "damage": (0, 0),  "effect": "teleport",  "detect_dc": 16, "min_floor": 5},
     "alarm":    {"name": "Alarm Trap",    "damage": (0, 0),  "effect": "alert_all", "detect_dc": 10, "min_floor": 1},
     "gas":      {"name": "Gas Trap",      "damage": (1, 3),  "effect": "confusion", "detect_dc": 18, "min_floor": 7},
+}
+
+# ============================================================
+# ENVIRONMENTAL VIGNETTES
+# ============================================================
+VIGNETTE_TEMPLATES = [
+    {"name": "Fallen Adventurer", "char": '&', "lore": "A skeleton clutches a faded journal: 'Day 7... the walls are closing in.'", "loot_chance": 0.40, "loot_tier": 1},
+    {"name": "Barricaded Room", "char": '#', "lore": "Scratch marks cover the inside of a hastily barricaded door. Whatever was here... got out.", "loot_chance": 0.25, "loot_tier": 2},
+    {"name": "Ritual Circle", "char": '*', "lore": "Melted candles surround a circle of strange symbols etched in blood.", "loot_chance": 0.50, "loot_tier": 2},
+    {"name": "Abandoned Camp", "char": '%', "lore": "A cold campfire and an empty bedroll. Someone left in a hurry.", "loot_chance": 0.60, "loot_tier": 1},
+    {"name": "Shrine of Offerings", "char": '_', "lore": "Withered flowers and small coins lie before a crumbling idol.", "loot_chance": 0.30, "loot_tier": 1},
+    {"name": "Empty Potion Lab", "char": '&', "lore": "Broken vials and a skeleton. The last experiment went wrong.", "loot_chance": 0.50, "loot_tier": 2},
+    {"name": "Collapsed Tunnel", "char": '#', "lore": "Rubble blocks a passage. Through a crack, you see bones.", "loot_chance": 0.15, "loot_tier": 1},
+    {"name": "Blood Trail", "char": '.', "lore": "A trail of dried blood leads to a dark alcove... and stops.", "loot_chance": 0.20, "loot_tier": 1},
+    {"name": "Throne of Dust", "char": '_', "lore": "A crumbling stone throne. Whoever sat here ruled nothing but dust.", "loot_chance": 0.35, "loot_tier": 3},
+    {"name": "Weeping Statue", "char": '*', "lore": "A marble face with tear-stained cheeks. The eyes seem to follow you.", "loot_chance": 0.30, "loot_tier": 1},
+    {"name": "Prison Cell", "char": '#', "lore": "Chains hang from the wall. Tally marks cover every surface.", "loot_chance": 0.25, "loot_tier": 1},
+    {"name": "Mushroom Garden", "char": '%', "lore": "Bioluminescent fungi light a small grotto. Some look edible... maybe.", "loot_chance": 0.50, "loot_tier": 1},
+    {"name": "Ancient Library", "char": '?', "lore": "Rotting bookshelves. One tome catches your eye: 'On the Nature of Dread.'", "loot_chance": 0.45, "loot_tier": 2},
+    {"name": "Forge Remnants", "char": ')', "lore": "A cold anvil and scattered tools. Someone was crafting weapons here.", "loot_chance": 0.55, "loot_tier": 2},
+    {"name": "Well of Whispers", "char": '~', "lore": "You lean over the well. Faint whispers rise from the depths.", "loot_chance": 0.30, "loot_tier": 1},
+    {"name": "Cocoon Chamber", "char": 'S', "lore": "Silken cocoons hang from the ceiling. Something moves inside one.", "loot_chance": 0.20, "loot_tier": 2},
+    {"name": "Treasure Hoard", "char": '$', "lore": "A pile of coins surrounds a skeleton still clutching a bag.", "loot_chance": 0.80, "loot_tier": 2},
+    {"name": "War Memorial", "char": '|', "lore": "Names are carved into a stone pillar. Many are scratched out.", "loot_chance": 0.15, "loot_tier": 1},
+    {"name": "Alchemist's Grave", "char": '!', "lore": "A headstone reads: 'Here lies one who sought the elixir of life. He found death.'", "loot_chance": 0.45, "loot_tier": 2},
+    {"name": "Dragon Scale", "char": '=', "lore": "A single massive scale, bigger than your shield. What creature left this?", "loot_chance": 0.35, "loot_tier": 3},
+    {"name": "Broken Mirror", "char": '*', "lore": "Shattered glass reflects a hundred fractured images of yourself.", "loot_chance": 0.20, "loot_tier": 1},
+    {"name": "Last Stand", "char": ')', "lore": "Three skeletons in formation, weapons drawn. They died fighting back-to-back.", "loot_chance": 0.60, "loot_tier": 2},
+    {"name": "Cursed Altar", "char": '_', "lore": "Dark stains on an obsidian altar. The air feels wrong here.", "loot_chance": 0.40, "loot_tier": 3},
+    {"name": "Frozen Warrior", "char": '@', "lore": "An adventurer encased in ice, expression frozen in horror.", "loot_chance": 0.50, "loot_tier": 2},
+    {"name": "Rat King", "char": 'r', "lore": "A mass of rat bones fused together. Nature is not kind here.", "loot_chance": 0.25, "loot_tier": 1},
+]
+
+# ============================================================
+# NPC ENCOUNTERS (Phase 3)
+# ============================================================
+NPC_TYPES = {
+    "wandering_merchant": {
+        "name": "Wandering Merchant",
+        "char": '@',
+        "color": C_GOLD,
+        "dialogue": "Psst! Want to trade? I have rare wares...",
+        "interaction": "shop",  # Opens a mini shop
+        "min_floor": 2,
+        "max_floor": 14,
+    },
+    "lost_adventurer": {
+        "name": "Lost Adventurer",
+        "char": '@',
+        "color": C_CYAN,
+        "dialogue": "Thank the gods! Another living soul! Take this — I have no use for it now.",
+        "interaction": "gift",  # Gives a random item
+        "min_floor": 1,
+        "max_floor": 10,
+    },
+    "old_sage": {
+        "name": "Old Sage",
+        "char": '@',
+        "color": C_MAGENTA,
+        "dialogue": "I sense great potential in you. Let me share my knowledge...",
+        "interaction": "buff",  # Temporary stat buff
+        "min_floor": 4,
+        "max_floor": 15,
+    },
+    "wounded_knight": {
+        "name": "Wounded Knight",
+        "char": '@',
+        "color": C_RED,
+        "dialogue": "Beware... a terrible beast guards the next floor. Here, take my blade.",
+        "interaction": "warning",  # Reveals enemy info + weapon gift
+        "min_floor": 4,
+        "max_floor": 14,
+    },
+    "ghost_guide": {
+        "name": "Ghost Guide",
+        "char": '@',
+        "color": C_DARK,
+        "dialogue": "I once walked these halls alive. Let me show you the hidden paths...",
+        "interaction": "reveal",  # Reveals map
+        "min_floor": 3,
+        "max_floor": 15,
+    },
+}
+
+# ============================================================
+# WEAPON ENCHANTMENTS (Phase 4)
+# ============================================================
+ENCHANTMENTS = {
+    "flame": {"name": "Flame", "desc": "+fire damage, ignite chance", "bonus_dmg": 3, "element": "fire", "proc_chance": 0.20, "proc_effect": "burn"},
+    "frost": {"name": "Frost", "desc": "+cold damage, slow chance", "bonus_dmg": 2, "element": "cold", "proc_chance": 0.25, "proc_effect": "slow"},
+    "venom": {"name": "Venom", "desc": "+poison damage, poison chance", "bonus_dmg": 2, "element": "poison", "proc_chance": 0.30, "proc_effect": "poison"},
+    "lightning": {"name": "Lightning", "desc": "+shock damage, stun chance", "bonus_dmg": 4, "element": "lightning", "proc_chance": 0.15, "proc_effect": "stun"},
+    "vampiric": {"name": "Vampiric", "desc": "Lifesteal on hit", "bonus_dmg": 1, "element": "physical", "proc_chance": 0.40, "proc_effect": "lifesteal"},
+    "keen": {"name": "Keen", "desc": "+crit chance and damage", "bonus_dmg": 0, "element": "physical", "proc_chance": 0.25, "proc_effect": "crit"},
 }
 
 DEATH_QUIPS = [
@@ -777,6 +983,9 @@ class Enemy:
         self.phase_cooldown = 0
         self.phase_cooldown_max = t.get("phase_cooldown_max", 3)
         self.psychic_range = t.get("psychic_range", 0)
+        self.bleed_chance = t.get("bleed_chance", 0)
+        self.freeze_status_chance = t.get("freeze_status_chance", 0)
+        self.silence_chance = t.get("silence_chance", 0)
         self.poisoned_turns = 0  # Poison from player's Poison Blade ability
         # Fleeing system
         self.fleeing = False
@@ -786,6 +995,21 @@ class Enemy:
         self.resists = t.get("resists", [])
         self.vulnerable = t.get("vulnerable", [])
         self.regen_suppressed = 0  # Turns of regen suppression (e.g. fire vs troll)
+        # Apex enemy fields
+        self.apex = t.get("apex", False)
+        self.breath_weapon = t.get("breath_weapon", None)
+        self.breath_range = t.get("breath_range", 0)
+        self.breath_cooldown_max = t.get("breath_cooldown_max", 0)
+        self.breath_cooldown = 0
+        self.multi_attack = t.get("multi_attack", 1)
+        self.stun_on_hit = t.get("stun_on_hit", 0)
+        # Boss phase tracking
+        self.boss_phase = 1
+        self.boss_phase_turn = 0  # Turns since last phase action (e.g., bat summon)
+        # Expansion status effects on enemies
+        self.bleed_stacks = 0
+        self.bleed_turns = 0
+        self.silenced_turns = 0
 
     def is_alive(self):
         return self.hp > 0
@@ -846,6 +1070,9 @@ class Player:
         else:
             self.known_spells = set(BASE_SPELLS)  # classless = all base spells
         self.known_abilities = set()  # Warrior/Rogue combat techniques (unlocked via Cleave/Lethality)
+        # Expansion status effects
+        self.bleed_stacks = 0
+        self.bleed_turns = 0
 
     @property
     def carry_capacity(self):
@@ -1139,10 +1366,11 @@ class BSPNode:
             if rw < min_room or rh < min_room:
                 return
             self.room = (rx, ry, rw, rh)
-            for yy in range(ry, ry + rh):
-                for xx in range(rx, rx + rw):
-                    if 0 < xx < MAP_W - 1 and 0 < yy < MAP_H - 1:
-                        tiles[yy][xx] = T_FLOOR
+            # Choose room shape variant
+            shape = random.choices(
+                ["rect", "circular", "l_shaped", "pillared"],
+                weights=[50, 20, 15, 15], k=1)[0]
+            _carve_room_shape(tiles, rx, ry, rw, rh, shape)
             return
         if self.left:
             self.left.create_rooms(tiles, min_room, padding)
@@ -1156,6 +1384,53 @@ class BSPNode:
                 r2 = random.choice(rr)
                 _carve_corridor(tiles, r1[0]+r1[2]//2, r1[1]+r1[3]//2,
                                r2[0]+r2[2]//2, r2[1]+r2[3]//2)
+
+
+def _carve_room_shape(tiles, rx, ry, rw, rh, shape):
+    """Carve a room of the given shape into the tile grid."""
+    if shape == "rect":
+        for yy in range(ry, ry + rh):
+            for xx in range(rx, rx + rw):
+                if 0 < xx < MAP_W - 1 and 0 < yy < MAP_H - 1:
+                    tiles[yy][xx] = T_FLOOR
+    elif shape == "circular":
+        cx = rx + rw / 2.0
+        cy = ry + rh / 2.0
+        rx2 = rw / 2.0
+        ry2 = rh / 2.0
+        for yy in range(ry, ry + rh):
+            for xx in range(rx, rx + rw):
+                if 0 < xx < MAP_W - 1 and 0 < yy < MAP_H - 1:
+                    dx = (xx + 0.5 - cx) / rx2
+                    dy = (yy + 0.5 - cy) / ry2
+                    if dx * dx + dy * dy <= 1.0:
+                        tiles[yy][xx] = T_FLOOR
+    elif shape == "l_shaped":
+        # Carve an L-shape: full width top half, left half bottom half
+        mid_y = ry + rh // 2
+        mid_x = rx + rw // 2
+        for yy in range(ry, ry + rh):
+            for xx in range(rx, rx + rw):
+                if 0 < xx < MAP_W - 1 and 0 < yy < MAP_H - 1:
+                    if yy < mid_y or xx < mid_x:
+                        tiles[yy][xx] = T_FLOOR
+    elif shape == "pillared":
+        # Rectangular room with interior pillars (wall tiles) for cover
+        for yy in range(ry, ry + rh):
+            for xx in range(rx, rx + rw):
+                if 0 < xx < MAP_W - 1 and 0 < yy < MAP_H - 1:
+                    tiles[yy][xx] = T_FLOOR
+        # Place pillars every 2 tiles, inset by 1 from room edges
+        for yy in range(ry + 1, ry + rh - 1, 2):
+            for xx in range(rx + 1, rx + rw - 1, 2):
+                if 0 < xx < MAP_W - 1 and 0 < yy < MAP_H - 1:
+                    tiles[yy][xx] = T_WALL
+    else:
+        # Fallback: standard rect
+        for yy in range(ry, ry + rh):
+            for xx in range(rx, rx + rw):
+                if 0 < xx < MAP_W - 1 and 0 < yy < MAP_H - 1:
+                    tiles[yy][xx] = T_FLOOR
 
 
 def _carve_corridor(tiles, x1, y1, x2, y2):
@@ -1498,6 +1773,10 @@ class GameState:
         self.puzzles = []
         # Wall torches on current floor (#1)
         self.wall_torches = []
+        # Environmental vignettes on current floor
+        self.vignettes = []
+        # NPC encounters on current floor
+        self.npcs = []
         # Traps on current floor
         self.traps = []
         # Stealth system: noise generated this turn
@@ -1509,6 +1788,12 @@ class GameState:
         self.bestiary = {}  # {etype: {"encountered": N, "killed": N, "dmg_dealt": N, "dmg_taken": N, "abilities": set()}}
         # Auto-fight / auto-explore state
         self.auto_fighting = False
+        # Challenge modes (Phase 4)
+        self.challenge_ironman = False
+        self.challenge_speedrun = False
+        self.challenge_pacifist = False
+        self.challenge_dark = False
+        self.speedrun_timer = 0  # Turns per floor limit
         self.auto_exploring = False
         self.auto_fight_target = None
         # Shuffle potion/scroll identities per game
@@ -1566,6 +1851,7 @@ class GameState:
         self.player.floor = floor_num
         if floor_num > self.player.deepest_floor:
             self.player.deepest_floor = floor_num
+        self.speedrun_timer = 0  # Reset speedrun timer per floor
         self.floors_explored.add(floor_num)
         self.tiles, self.rooms, start, self.stair_down = generate_dungeon(floor_num)
         self.player.x, self.player.y = start
@@ -1578,6 +1864,8 @@ class GameState:
         self.puzzles = []
         self.wall_torches = []
         self.traps = []
+        self.vignettes = []
+        self.npcs = []
         # Determine active branch for this floor
         self.active_branch = self._get_active_branch(floor_num)
         # Apply branch-specific terrain modifications
@@ -1591,6 +1879,9 @@ class GameState:
         self._place_wall_torches(floor_num)
         self._place_puzzle(floor_num)
         self._place_traps(floor_num)
+        self._place_vignettes(floor_num)
+        self._place_npcs(floor_num)
+        self._place_enchant_anvil(floor_num)
         # Branch-specific extra traps
         if self.active_branch:
             bdef = BRANCH_DEFS[self.active_branch]
@@ -1638,6 +1929,17 @@ class GameState:
                 if pos:
                     self.enemies.append(Enemy(pos[0], pos[1], mini_boss))
                     self.msg(f"The {ENEMY_TYPES[mini_boss]['name']} guards this place!", C_RED)
+        # Apex enemies: rare powerful enemies on deep floors
+        apex_types = [k for k, v in ENEMY_TYPES.items()
+                      if v.get("apex") and v["min_floor"] <= floor_num <= v.get("max_floor", 99)]
+        if apex_types and random.random() < B["apex_spawn_chance"]:
+            apex_type = random.choice(apex_types)
+            pos = self._find_spawn_pos()
+            if pos:
+                apex = Enemy(pos[0], pos[1], apex_type)
+                apex.alertness = "unwary"
+                self.enemies.append(apex)
+                self.msg(f"You sense something ancient and terrible on this floor...", C_RED)
         for _ in range(num):
             if not eligible:
                 break
@@ -1850,7 +2152,7 @@ class GameState:
             return
         room = random.choice(candidates)
         rx, ry, rw, rh = room
-        puzzle_type = random.choice(["torch", "switch", "locked_stairs"])
+        puzzle_type = random.choice(["torch", "switch", "locked_stairs", "sequence", "pressure"])
 
         if puzzle_type == "torch":
             # Place 3-4 pedestals to light
@@ -1895,6 +2197,43 @@ class GameState:
                     self.puzzles.append({"type": "locked_stairs", "positions": positions,
                                          "solved": False, "room": room, "stairs": (sx, sy)})
 
+        elif puzzle_type == "sequence":
+            # Sequence puzzle: pedestals must be lit in a specific order
+            count = random.randint(3, 5)
+            positions = []
+            for _ in range(count):
+                px = random.randint(rx, rx + rw - 1)
+                py = random.randint(ry, ry + rh - 1)
+                if 0 < px < MAP_W-1 and 0 < py < MAP_H-1 and self.tiles[py][px] == T_FLOOR:
+                    self.tiles[py][px] = T_PEDESTAL_UNLIT
+                    positions.append((px, py))
+            if len(positions) >= 3:
+                # Correct order is stored; player must figure it out
+                correct_order = list(range(len(positions)))
+                random.shuffle(correct_order)
+                self.puzzles.append({
+                    "type": "sequence", "positions": positions,
+                    "correct_order": correct_order, "current_step": 0,
+                    "solved": False, "room": room
+                })
+
+        elif puzzle_type == "pressure":
+            # Pressure plate puzzle: stand on all plates within a time limit
+            count = random.randint(3, 4)
+            positions = []
+            for _ in range(count):
+                px = random.randint(rx, rx + rw - 1)
+                py = random.randint(ry, ry + rh - 1)
+                if 0 < px < MAP_W-1 and 0 < py < MAP_H-1 and self.tiles[py][px] == T_FLOOR:
+                    self.tiles[py][px] = T_SWITCH_OFF
+                    positions.append((px, py))
+            if positions:
+                self.puzzles.append({
+                    "type": "pressure", "positions": positions,
+                    "activated": [], "timer": 0, "timer_max": 15,
+                    "solved": False, "room": room
+                })
+
     def _place_traps(self, floor_num):
         """Place traps on floor tiles. Hidden overlay tracked in self.traps."""
         count = B["trap_base_count"] + int(floor_num * B["trap_per_floor"])
@@ -1925,6 +2264,93 @@ class GameState:
                     "visible": False, "triggered": False, "disarmed": False
                 })
                 break
+
+    def _place_vignettes(self, floor_num):
+        """Place 1-2 environmental vignettes per floor for storytelling."""
+        if not self.rooms or len(self.rooms) < 3:
+            return
+        count = random.randint(1, 2)
+        used_rooms = set()
+        start_room = self.rooms[0]
+        shop_rooms = {r for r, _ in self.shops} if self.shops else set()
+        for _ in range(count):
+            candidates = [r for r in self.rooms[1:]
+                         if r not in used_rooms and r != start_room and r not in shop_rooms]
+            if not candidates:
+                break
+            room = random.choice(candidates)
+            used_rooms.add(room)
+            rx, ry, rw, rh = room
+            # Find a floor tile in the room
+            vx = rx + rw // 2
+            vy = ry + rh // 2
+            if 0 < vx < MAP_W - 1 and 0 < vy < MAP_H - 1 and self.tiles[vy][vx] == T_FLOOR:
+                template = random.choice(VIGNETTE_TEMPLATES)
+                vignette = {
+                    "x": vx, "y": vy,
+                    "name": template["name"],
+                    "lore": template["lore"],
+                    "examined": False,
+                    "loot_spawned": False,
+                    "loot_chance": template["loot_chance"],
+                    "loot_tier": template["loot_tier"],
+                }
+                self.vignettes.append(vignette)
+
+    def _place_npcs(self, floor_num):
+        """Place 0-1 NPCs per floor (30% chance on floors 2+)."""
+        if floor_num < 2 or random.random() > 0.30:
+            return
+        if not self.rooms or len(self.rooms) < 3:
+            return
+        eligible = [k for k, v in NPC_TYPES.items()
+                    if v["min_floor"] <= floor_num <= v["max_floor"]]
+        if not eligible:
+            return
+        npc_type = random.choice(eligible)
+        npc_def = NPC_TYPES[npc_type]
+        # Find a floor tile in a non-start, non-shop room
+        start_room = self.rooms[0]
+        shop_rooms = {r for r, _ in self.shops} if self.shops else set()
+        candidates = [r for r in self.rooms[1:]
+                      if r != start_room and r not in shop_rooms]
+        if not candidates:
+            return
+        room = random.choice(candidates)
+        rx, ry, rw, rh = room
+        nx = rx + rw // 2
+        ny = ry + rh // 2
+        if 0 < nx < MAP_W - 1 and 0 < ny < MAP_H - 1 and self.tiles[ny][nx] == T_FLOOR:
+            self.npcs.append({
+                "x": nx, "y": ny,
+                "type": npc_type,
+                "name": npc_def["name"],
+                "char": npc_def["char"],
+                "color": npc_def["color"],
+                "dialogue": npc_def["dialogue"],
+                "interaction": npc_def["interaction"],
+                "interacted": False,
+            })
+
+    def _place_enchant_anvil(self, floor_num):
+        """Place enchanting anvil on deep floors (Phase 4)."""
+        if floor_num < B["enchant_anvil_min_floor"]:
+            return
+        if random.random() > B["enchant_anvil_chance"]:
+            return
+        if not self.rooms or len(self.rooms) < 3:
+            return
+        start_room = self.rooms[0]
+        shop_rooms = {r for r, _ in self.shops} if self.shops else set()
+        candidates = [r for r in self.rooms[1:] if r != start_room and r not in shop_rooms]
+        if not candidates:
+            return
+        room = random.choice(candidates)
+        rx, ry, rw, rh = room
+        ax = rx + rw // 2
+        ay = ry + rh // 2
+        if 0 < ax < MAP_W - 1 and 0 < ay < MAP_H - 1 and self.tiles[ay][ax] == T_FLOOR:
+            self.tiles[ay][ax] = T_ENCHANT_ANVIL
 
     def _place_single_trap(self, floor_num):
         """Place a single additional trap (used by branch system)."""
@@ -2014,6 +2440,13 @@ def _award_kill(gs, enemy, msg=None, drops=False):
         True (for counting kills in AoE loops).
     """
     p = gs.player
+    # Pacifist challenge: killing enemies is forbidden
+    if gs.challenge_pacifist and not enemy.boss:
+        gs.msg("PACIFIST VIOLATION! You have killed a creature!", C_RED)
+        gs.msg("The guilt overwhelms you...", C_RED)
+        gs.game_over = True
+        gs.death_cause = "broke the pacifist oath"
+        return True
     p.xp += enemy.xp
     p.kills += 1
     _bestiary_record(gs, enemy.etype, "kill")
@@ -2023,6 +2456,10 @@ def _award_kill(gs, enemy, msg=None, drops=False):
         if msg is None:
             msg = f"You killed the {enemy.name}! (+{enemy.xp} XP)"
         gs.msg(msg, C_GREEN)
+    # Dread Lord defeated — announce The Abyss
+    if enemy.etype == "dread_lord":
+        gs.msg("The Dread Lord falls... but the floor cracks open beneath!", C_RED)
+        gs.msg("A stairway into THE ABYSS yawns before you. Dare you descend?", C_MAGENTA)
     # Boss-specific weapon drops (#20)
     if enemy.boss and enemy.etype in BOSS_DROPS:
         bd = BOSS_DROPS[enemy.etype]
@@ -2251,6 +2688,41 @@ def player_attack(gs, enemy):
     # Combat always alerts the target
     enemy.alertness = "alert"
     enemy.alerted = True
+    # Weapon enchantment proc (Phase 4)
+    if p.weapon and p.weapon.data.get("enchantment") and dmg > 0 and enemy.is_alive():
+        enchant_key = p.weapon.data["enchantment"]
+        if enchant_key in ENCHANTMENTS:
+            ench = ENCHANTMENTS[enchant_key]
+            # Bonus flat damage
+            bonus = p.weapon.data.get("enchant_bonus_dmg", 0)
+            if bonus > 0:
+                enemy.hp -= bonus
+                dmg += bonus
+            # Proc effect
+            proc_chance = p.weapon.data.get("enchant_proc_chance", 0)
+            proc_effect = p.weapon.data.get("enchant_proc_effect", "")
+            if random.random() < proc_chance:
+                if proc_effect == "burn":
+                    enemy.regen_suppressed = max(enemy.regen_suppressed, 5)
+                    gs.msg(f"Your weapon ignites the {enemy.name}!", C_LAVA)
+                elif proc_effect == "slow":
+                    enemy.frozen_turns = max(enemy.frozen_turns, 2)
+                    gs.msg(f"Frost slows the {enemy.name}!", C_CYAN)
+                elif proc_effect == "poison":
+                    if enemy.poisoned_turns <= 0:
+                        enemy.poisoned_turns = B["poison_duration"]
+                        gs.msg(f"Venom seeps into the {enemy.name}!", C_GREEN)
+                elif proc_effect == "stun":
+                    enemy.frozen_turns = max(enemy.frozen_turns, 1)
+                    gs.msg(f"Lightning stuns the {enemy.name}!", C_YELLOW)
+                elif proc_effect == "lifesteal":
+                    heal_amt = max(1, dmg // 4)
+                    p.hp = min(p.max_hp, p.hp + heal_amt)
+                    gs.msg(f"Your vampiric blade drains {heal_amt} HP!", C_GREEN)
+                elif proc_effect == "crit":
+                    crit_bonus = max(1, dmg // 2)
+                    enemy.hp -= crit_bonus
+                    gs.msg(f"Keen edge! Extra {crit_bonus} damage!", C_YELLOW)
     # Lifesteal from boss weapons (#20)
     if p.weapon and p.weapon.data.get("lifesteal") and dmg > 0:
         heal_amt = max(1, int(dmg * B["lifesteal_pct"]))
@@ -2280,6 +2752,11 @@ def enemy_attack(gs, enemy):
     if enemy.damage_type != "physical" and enemy.damage_type in p.player_resists():
         dmg = max(1, int(dmg * (1 - B["resist_reduction_pct"])))
         gs.msg(f"Your {enemy.damage_type} resistance absorbs some damage!", C_CYAN)
+    # Frozen shatter: bonus damage when hit while frozen
+    if "Frozen" in p.status_effects:
+        dmg = int(dmg * B["frozen_shatter_bonus"])
+        gs.msg("SHATTER! The ice amplifies the blow!", C_CYAN)
+        del p.status_effects["Frozen"]
     # Shield Wall: halve incoming damage
     if "Shield Wall" in p.status_effects:
         dmg = max(1, dmg // 2)
@@ -2320,6 +2797,30 @@ def enemy_attack(gs, enemy):
             p.status_effects["Paralysis"] = B["paralysis_duration"]
             gs.msg(f"The {enemy.name}'s psychic blast paralyzes you!", C_YELLOW)
             _bestiary_record(gs, enemy.etype, "ability", "paralyze")
+    # Bleed: stacking damage over time
+    if p.hp > 0 and enemy.bleed_chance and random.random() < enemy.bleed_chance:
+        p.bleed_stacks = min(p.bleed_stacks + 1, B["bleed_max_stacks"])
+        p.bleed_turns = B["bleed_duration"]
+        gs.msg(f"The {enemy.name}'s attack causes bleeding! ({p.bleed_stacks} stacks)", C_RED)
+        _bestiary_record(gs, enemy.etype, "ability", "bleed")
+    # Freeze status: skip turn, vulnerable to shatter
+    if p.hp > 0 and enemy.freeze_status_chance and random.random() < enemy.freeze_status_chance:
+        if "Frozen" not in p.status_effects:
+            p.status_effects["Frozen"] = B["frozen_status_duration"]
+            gs.msg(f"The {enemy.name}'s cold freezes you solid!", C_CYAN)
+            _bestiary_record(gs, enemy.etype, "ability", "freeze")
+    # Stun on hit (Stone Colossus)
+    if p.hp > 0 and enemy.stun_on_hit and random.random() < enemy.stun_on_hit:
+        if "Paralysis" not in p.status_effects:
+            p.status_effects["Paralysis"] = B["stun_duration"]
+            gs.msg(f"The {enemy.name}'s crushing blow stuns you!", C_YELLOW)
+            _bestiary_record(gs, enemy.etype, "ability", "stun")
+    # Silence: no spells or wands
+    if p.hp > 0 and enemy.silence_chance and random.random() < enemy.silence_chance:
+        if "Silence" not in p.status_effects:
+            p.status_effects["Silence"] = B["silence_duration"]
+            gs.msg(f"The {enemy.name} silences your magic!", C_MAGENTA)
+            _bestiary_record(gs, enemy.etype, "ability", "silence")
     if p.hp > 0 and p.hp <= p.max_hp * 0.2:
         gs.msg("!! LOW HP !!", C_RED)
         sound_alert(gs, "low_hp")
@@ -2448,6 +2949,9 @@ def process_enemies(gs):
         if e.fleeing:
             _flee_move(gs, e)
             continue
+        # Boss phase transitions
+        if e.boss:
+            _update_boss_phase(gs, e)
         if e.ai == "chase":
             _chase_move(gs, e)
         elif e.ai == "erratic":
@@ -2491,7 +2995,184 @@ def process_enemies(gs):
                         gs.game_over = True
                         gs.death_cause = f"burned by {e.name}"
                         sound_alert(gs, "death")
+        # Breath weapon (Ancient Dragon): ranged line attack on cooldown
+        if e.breath_weapon and e.is_alive() and not gs.game_over:
+            if e.breath_cooldown > 0:
+                e.breath_cooldown -= 1
+            elif abs(e.x - p.x) + abs(e.y - p.y) <= e.breath_range:
+                # Fire breath in a line towards the player
+                floor_num = p.floor
+                breath_dmg = B["breath_weapon_damage_base"] + floor_num * B["breath_weapon_damage_per_floor"]
+                if e.breath_weapon in p.player_resists():
+                    breath_dmg = max(1, int(breath_dmg * (1 - B["resist_reduction_pct"])))
+                    gs.msg(f"Your {e.breath_weapon} resistance reduces the breath damage!", C_CYAN)
+                p.hp -= breath_dmg
+                p.damage_taken += breath_dmg
+                gs.msg(f"The {e.name} unleashes a {e.breath_weapon} breath! (-{breath_dmg})", C_LAVA)
+                _bestiary_record(gs, e.etype, "ability", "breath_weapon")
+                e.breath_cooldown = e.breath_cooldown_max
+                if p.hp <= 0:
+                    gs.game_over = True
+                    gs.death_cause = f"incinerated by {e.name}'s breath"
+                    sound_alert(gs, "death")
+        # Multi-attack (Hydra): extra attacks when adjacent
+        if e.multi_attack > 1 and e.is_alive() and not gs.game_over:
+            if abs(e.x - p.x) + abs(e.y - p.y) <= 1:
+                extra_attacks = e.multi_attack - 1  # First attack already handled by AI
+                for _ in range(extra_attacks):
+                    if gs.game_over or not e.is_alive():
+                        break
+                    if random.randint(1, 100) <= p.evasion_chance():
+                        gs.msg(f"You dodge a {e.name} head strike!", C_CYAN)
+                        continue
+                    extra_dmg = random.randint(e.dmg[0], e.dmg[1])
+                    extra_dmg = int(extra_dmg * B["hydra_multi_attack_dmg_mult"])
+                    extra_dmg = max(1, extra_dmg - p.total_defense() // B["defense_divisor"])
+                    if "Shield Wall" in p.status_effects:
+                        extra_dmg = max(1, extra_dmg // 2)
+                    p.hp -= extra_dmg
+                    p.damage_taken += extra_dmg
+                    gs.msg(f"A {e.name} head bites for {extra_dmg}!", C_RED)
+                    if p.hp <= 0:
+                        gs.game_over = True
+                        gs.death_cause = f"torn apart by {e.name}"
+                        sound_alert(gs, "death")
     gs.enemies = [e for e in gs.enemies if e.is_alive()]
+
+
+def _update_boss_phase(gs, e):
+    """Update boss phase based on HP thresholds. Triggers phase transition effects."""
+    hp_pct = e.hp / e.max_hp if e.max_hp > 0 else 1.0
+    p = gs.player
+    e.boss_phase_turn += 1
+
+    if e.etype == "vampire_lord":
+        if hp_pct <= B["boss_phase3_threshold"] and e.boss_phase < 3:
+            e.boss_phase = 3
+            gs.msg("The Vampire Lord screams! Bats swarm from the shadows!", C_RED)
+            _bestiary_record(gs, e.etype, "ability", "bat_swarm")
+        elif hp_pct <= B["boss_phase2_threshold"] and e.boss_phase < 2:
+            e.boss_phase = 2
+            e.speed = ENEMY_TYPES[e.etype]["speed"] * 2.0
+            gs.msg("The Vampire Lord ENRAGES! Its attacks accelerate!", C_RED)
+            _bestiary_record(gs, e.etype, "ability", "enrage")
+        # Phase 3: summon bats periodically
+        if e.boss_phase >= 3 and e.boss_phase_turn % B["vampire_phase3_bat_interval"] == 0:
+            if len(gs.enemies) < 25:
+                pos = gs._find_spawn_pos()
+                if pos:
+                    bat = Enemy(pos[0], pos[1], "bat")
+                    bat.alerted = True
+                    bat.alertness = "alert"
+                    gs.enemies.append(bat)
+                    if (pos[0], pos[1]) in gs.visible:
+                        gs.msg("A bat swarm appears!", C_MAGENTA)
+        # Phase 2+: enhanced lifesteal
+        if e.boss_phase >= 2:
+            e.lifesteal = True
+
+    elif e.etype == "dread_lord":
+        if hp_pct <= B["boss_phase3_threshold"] and e.boss_phase < 3:
+            e.boss_phase = 3
+            gs.msg("The Dread Lord unleashes a wave of darkness!", C_RED)
+            _bestiary_record(gs, e.etype, "ability", "aoe_darkness")
+        elif hp_pct <= B["boss_phase2_threshold"] and e.boss_phase < 2:
+            e.boss_phase = 2
+            e.ai = "chase"  # Stop summoning, switch to aggressive chase
+            e.dmg = (e.dmg[0] * 2, e.dmg[1] * 2)
+            gs.msg("The Dread Lord ENRAGES! It charges at you with terrible fury!", C_RED)
+            _bestiary_record(gs, e.etype, "ability", "enrage_charge")
+        # Phase 3: AOE darkness damage to adjacent tiles
+        if e.boss_phase >= 3:
+            if abs(e.x - p.x) + abs(e.y - p.y) <= 2:
+                aoe_dmg = B["dread_phase3_aoe_damage"]
+                p.hp -= aoe_dmg
+                p.damage_taken += aoe_dmg
+                if gs.turn_count % 2 == 0:
+                    gs.msg(f"Darkness burns you! (-{aoe_dmg} HP)", C_RED)
+                if p.hp <= 0:
+                    gs.game_over = True
+                    gs.death_cause = f"consumed by {e.name}'s darkness"
+                    sound_alert(gs, "death")
+
+    # Mini-boss phases (2 phases: normal and enraged)
+    elif e.etype in ("crypt_guardian", "flame_tyrant", "elder_brain", "beast_lord"):
+        if hp_pct <= B["mini_boss_phase2_threshold"] and e.boss_phase < 2:
+            e.boss_phase = 2
+            # Enrage: boost speed and damage
+            e.speed = ENEMY_TYPES[e.etype]["speed"] * 1.5
+            lo, hi = e.dmg
+            e.dmg = (int(lo * 1.3), int(hi * 1.3))
+            gs.msg(f"The {e.name} ENRAGES!", C_RED)
+            _bestiary_record(gs, e.etype, "ability", "enrage")
+            # Type-specific phase 2 effects
+            if e.etype == "elder_brain":
+                e.paralyze_chance = min(0.60, e.paralyze_chance + 0.20)
+                gs.msg("Psychic energy intensifies!", C_MAGENTA)
+            elif e.etype == "flame_tyrant":
+                e.fire_aura = True
+                gs.msg("Flames erupt around the Flame Tyrant!", C_LAVA)
+            elif e.etype == "crypt_guardian":
+                e.regen = 2
+                gs.msg("The Crypt Guardian draws power from the dead!", C_CYAN)
+            elif e.etype == "beast_lord":
+                # Summon pack allies
+                for _ in range(2):
+                    pos = gs._find_spawn_pos()
+                    if pos and len(gs.enemies) < 25:
+                        wolf = Enemy(pos[0], pos[1], "rat")
+                        wolf.alerted = True
+                        wolf.alertness = "alert"
+                        gs.enemies.append(wolf)
+                gs.msg("The Beast Lord howls! Pack allies arrive!", C_YELLOW)
+
+    elif e.etype == "abyssal_horror":
+        if hp_pct <= B["boss_phase3_threshold"] and e.boss_phase < 3:
+            e.boss_phase = 3
+            e.regen = 8
+            e.speed = ENEMY_TYPES[e.etype]["speed"] * 1.5
+            gs.msg("The Abyssal Horror tears reality apart! The void consumes all!", C_RED)
+            _bestiary_record(gs, e.etype, "ability", "void_rage")
+        elif hp_pct <= B["boss_phase2_threshold"] and e.boss_phase < 2:
+            e.boss_phase = 2
+            e.ai = "chase"
+            lo, hi = e.dmg
+            e.dmg = (int(lo * 1.5), int(hi * 1.5))
+            gs.msg("The Abyssal Horror ENRAGES! Tentacles lash in all directions!", C_RED)
+            _bestiary_record(gs, e.etype, "ability", "enrage")
+        # Phase 3: AOE void damage
+        if e.boss_phase >= 3:
+            if abs(e.x - p.x) + abs(e.y - p.y) <= 3:
+                void_dmg = B["dread_phase3_aoe_damage"] + 3
+                p.hp -= void_dmg
+                p.damage_taken += void_dmg
+                if gs.turn_count % 2 == 0:
+                    gs.msg(f"The void tears at your soul! (-{void_dmg} HP)", C_MAGENTA)
+                if p.hp <= 0:
+                    gs.game_over = True
+                    gs.death_cause = "consumed by the Abyssal Horror"
+                    sound_alert(gs, "death")
+        # Phase 2+: summon void stalkers
+        if e.boss_phase >= 2 and e.boss_phase_turn % 5 == 0:
+            if len(gs.enemies) < 25:
+                pos = gs._find_spawn_pos()
+                if pos:
+                    minion = Enemy(pos[0], pos[1], "void_stalker")
+                    minion.alerted = True
+                    minion.alertness = "alert"
+                    gs.enemies.append(minion)
+                    if (pos[0], pos[1]) in gs.visible:
+                        gs.msg("A Void Stalker materializes!", C_DARK)
+
+    # Generic mini-boss fallback for new branch bosses
+    elif e.etype in ("fungal_queen", "trap_master", "void_herald", "inferno_king"):
+        if hp_pct <= B["mini_boss_phase2_threshold"] and e.boss_phase < 2:
+            e.boss_phase = 2
+            e.speed = ENEMY_TYPES[e.etype]["speed"] * 1.5
+            lo, hi = e.dmg
+            e.dmg = (int(lo * 1.3), int(hi * 1.3))
+            gs.msg(f"The {e.name} ENRAGES!", C_RED)
+            _bestiary_record(gs, e.etype, "ability", "enrage")
 
 
 def _try_enemy_move(gs, e, dx, dy):
@@ -2939,6 +3620,23 @@ def process_status(gs):
         if p.status_effects[eff] <= 0:
             expired.append(eff)
             del p.status_effects[eff]
+    # Bleed tick damage (stacking)
+    if p.bleed_stacks > 0 and p.bleed_turns > 0:
+        bleed_dmg = B["bleed_damage_per_tick"] * p.bleed_stacks
+        p.hp -= bleed_dmg
+        p.damage_taken += bleed_dmg
+        p.bleed_turns -= 1
+        if gs.turn_count % 2 == 0:
+            gs.msg(f"You bleed! (-{bleed_dmg} HP, {p.bleed_stacks} stacks)", C_RED)
+        if p.bleed_turns <= 0:
+            p.bleed_stacks = 0
+            gs.msg("The bleeding stops.", C_DARK)
+        if p.hp <= 0:
+            gs.game_over = True
+            gs.death_cause = "bled out"
+            gs.msg("You bleed out...", C_RED)
+            sound_alert(gs, "death")
+            return
     for eff in expired:
         gs.msg(f"{eff} wears off.", C_DARK)
     # Mana regen
@@ -2956,9 +3654,112 @@ def process_status(gs):
     for e in gs.enemies:
         if e.frozen_turns > 0:
             e.frozen_turns -= 1
+    # Speedrun challenge: floor timer
+    if gs.challenge_speedrun and not gs.game_over:
+        gs.speedrun_timer += 1
+        floor_limit = 100 + p.floor * 20  # Gets harder on deeper floors
+        if gs.speedrun_timer >= floor_limit:
+            gs.game_over = True
+            gs.death_cause = "ran out of time (speedrun)"
+            gs.msg("TIME'S UP! The dungeon collapses around you!", C_RED)
+            sound_alert(gs, "death")
+            return
+        remaining = floor_limit - gs.speedrun_timer
+        if remaining == 20:
+            gs.msg(f"SPEEDRUN: Only {remaining} turns left on this floor!", C_RED)
+        elif remaining == 50:
+            gs.msg(f"SPEEDRUN: {remaining} turns remaining.", C_YELLOW)
+    # Branch floor environmental mechanics
+    if gs.active_branch and not gs.game_over:
+        _process_branch_effects(gs)
     # Class ability cooldown tick
     if p.ability_cooldown > 0:
         p.ability_cooldown -= 1
+
+
+def _process_branch_effects(gs):
+    """Apply environmental effects based on active branch."""
+    p = gs.player
+    branch = gs.active_branch
+    if branch == "flooded_crypts":
+        # Standing in water deals cold damage
+        if gs.tiles[p.y][p.x] == T_WATER:
+            cold_dmg = B["flooded_crypts_water_dmg"]
+            if "cold" not in p.player_resists():
+                p.hp -= cold_dmg
+                p.damage_taken += cold_dmg
+                if gs.turn_count % 3 == 0:
+                    gs.msg("The frigid water chills your bones! (-{} HP)".format(cold_dmg), C_CYAN)
+                if p.hp <= 0:
+                    gs.game_over = True
+                    gs.death_cause = "frozen in the crypts"
+                    sound_alert(gs, "death")
+    elif branch == "burning_pits":
+        # Proximity to lava causes heat damage
+        for dy in range(-B["burning_pits_lava_proximity"], B["burning_pits_lava_proximity"] + 1):
+            for dx in range(-B["burning_pits_lava_proximity"], B["burning_pits_lava_proximity"] + 1):
+                ny, nx = p.y + dy, p.x + dx
+                if 0 <= ny < MAP_H and 0 <= nx < MAP_W and gs.tiles[ny][nx] == T_LAVA:
+                    if "fire" not in p.player_resists():
+                        heat_dmg = B["burning_pits_heat_dmg"]
+                        p.hp -= heat_dmg
+                        p.damage_taken += heat_dmg
+                        if gs.turn_count % 4 == 0:
+                            gs.msg("The intense heat sears you! (-{} HP)".format(heat_dmg), C_LAVA)
+                        if p.hp <= 0:
+                            gs.game_over = True
+                            gs.death_cause = "burned by volcanic heat"
+                            sound_alert(gs, "death")
+                    return  # Only apply once per turn
+    elif branch == "mind_halls":
+        # Random confusion from psychic ambient energy
+        if random.random() < B["mind_halls_confusion_chance"]:
+            if "Confusion" not in p.status_effects:
+                p.status_effects["Confusion"] = random.randint(2, 4)
+                gs.msg("Psychic whispers cloud your mind!", C_MAGENTA)
+    elif branch == "beast_warrens":
+        # Beast Warrens: enemies have boosted detection range (handled in detection)
+        # Extra noise attracts enemies on even turns
+        if gs.turn_count % 6 == 0:
+            for e in gs.enemies:
+                if not e.alerted and e.alertness == "unwary":
+                    dist = abs(e.x - p.x) + abs(e.y - p.y)
+                    if dist <= 10:
+                        e.alertness = "alert"
+                        e.alerted = True
+    elif branch == "fungal_depths":
+        # Spore clouds: periodic poison chance
+        if gs.turn_count % 5 == 0 and random.random() < 0.15:
+            if "Poison" not in p.status_effects:
+                p.status_effects["Poison"] = 3
+                gs.msg("Spores fill the air! You inhale poison!", C_GREEN)
+    elif branch == "trapped_halls":
+        # Harder to detect traps in this branch (handled by trap_detect_penalty)
+        pass  # Extra traps already handled in branch defs
+    elif branch == "void_rift":
+        # Random teleportation chance
+        if gs.turn_count % 8 == 0 and random.random() < 0.10:
+            pos = gs._find_spawn_pos()
+            if pos:
+                p.x, p.y = pos
+                gs.msg("Reality shifts! You are teleported!", C_MAGENTA)
+    elif branch == "infernal_forge":
+        # Standing near lava (same as burning_pits but more intense)
+        for dy in range(-1, 2):
+            for dx in range(-1, 2):
+                ny, nx = p.y + dy, p.x + dx
+                if 0 <= ny < MAP_H and 0 <= nx < MAP_W and gs.tiles[ny][nx] == T_LAVA:
+                    if "fire" not in p.player_resists():
+                        heat_dmg = B["burning_pits_heat_dmg"] + 1
+                        p.hp -= heat_dmg
+                        p.damage_taken += heat_dmg
+                        if gs.turn_count % 3 == 0:
+                            gs.msg("Molten metal sears you! (-{} HP)".format(heat_dmg), C_LAVA)
+                        if p.hp <= 0:
+                            gs.game_over = True
+                            gs.death_cause = "melted in the Infernal Forge"
+                            sound_alert(gs, "death")
+                    return
 
 
 def sound_alert(gs, event):
@@ -3233,6 +4034,9 @@ def cast_spell_headless(gs, spell_name, direction=None, target_enemy=None):
     if spell_name not in SPELLS:
         return False
     if spell_name not in p.known_spells:
+        return False
+    if "Silence" in p.status_effects:
+        gs.msg("You are silenced! Cannot cast spells!", C_MAGENTA)
         return False
     info = SPELLS[spell_name]
     if p.mana < info["cost"]:
@@ -3872,6 +4676,23 @@ def _toggle_switch(gs, sx, sy):
                         item.identified = True
                         gs.items.append(item)
                     gs.msg("All switches activated! A chest appears!", C_GOLD)
+        elif puzzle["type"] == "pressure":
+            # Track which plates have been stepped on
+            pos = (sx, sy)
+            if pos in [(px, py) for px, py in puzzle["positions"]]:
+                if pos not in puzzle["activated"]:
+                    puzzle["activated"].append(pos)
+                    gs.msg(f"Pressure plate activated! ({len(puzzle['activated'])}/{len(puzzle['positions'])})", C_YELLOW)
+                if len(puzzle["activated"]) >= len(puzzle["positions"]):
+                    puzzle["solved"] = True
+                    rx, ry, rw, rh = puzzle["room"]
+                    gold = random.randint(B["puzzle_room_gold_min"], B["puzzle_room_gold_max"])
+                    gs.player.gold += gold
+                    item = gs._random_item(rx + rw//2, ry + rh//2, gs.player.floor + 2)
+                    if item:
+                        item.identified = True
+                        gs.items.append(item)
+                    gs.msg(f"All plates activated! You find {gold} gold and a reward!", C_GOLD)
 
 def _interact_pedestal(gs, px, py):
     """Light a pedestal (costs torch fuel) (#9)."""
@@ -3883,20 +4704,132 @@ def _interact_pedestal(gs, px, py):
     gs.player.torch_fuel -= 10
     gs.tiles[py][px] = T_PEDESTAL_LIT
     gs.msg("The pedestal flares to life!", C_YELLOW)
-    # Check if torch puzzle is solved
+    # Check if torch or sequence puzzle is solved
     for puzzle in gs.puzzles:
-        if puzzle["solved"] or puzzle["type"] != "torch":
+        if puzzle["solved"]:
             continue
-        all_lit = all(gs.tiles[py2][px2] == T_PEDESTAL_LIT for px2, py2 in puzzle["positions"])
-        if all_lit:
-            puzzle["solved"] = True
-            rx, ry, rw, rh = puzzle["room"]
-            item = gs._random_item(rx + rw//2, ry + rh//2, gs.player.floor + 2)
+        if puzzle["type"] == "torch":
+            all_lit = all(gs.tiles[py2][px2] == T_PEDESTAL_LIT for px2, py2 in puzzle["positions"])
+            if all_lit:
+                puzzle["solved"] = True
+                rx, ry, rw, rh = puzzle["room"]
+                item = gs._random_item(rx + rw//2, ry + rh//2, gs.player.floor + 2)
+                if item:
+                    item.identified = True
+                    gs.items.append(item)
+                gs.msg("All pedestals lit! A chest materializes!", C_GOLD)
+        elif puzzle["type"] == "sequence":
+            # Check if this pedestal is the correct next in sequence
+            pos = (px, py)
+            if pos in puzzle["positions"]:
+                idx = puzzle["positions"].index(pos)
+                step = puzzle["current_step"]
+                if puzzle["correct_order"][step] == idx:
+                    puzzle["current_step"] += 1
+                    gs.msg(f"Correct! ({puzzle['current_step']}/{len(puzzle['positions'])})", C_GREEN)
+                    if puzzle["current_step"] >= len(puzzle["positions"]):
+                        puzzle["solved"] = True
+                        rx, ry, rw, rh = puzzle["room"]
+                        gold = random.randint(B["puzzle_room_gold_min"], B["puzzle_room_gold_max"])
+                        gs.player.gold += gold
+                        item = gs._random_item(rx + rw//2, ry + rh//2, gs.player.floor + 3)
+                        if item:
+                            item.identified = True
+                            gs.items.append(item)
+                        gs.msg(f"Sequence complete! You find {gold} gold and a rare reward!", C_GOLD)
+                else:
+                    # Wrong order — reset all pedestals
+                    puzzle["current_step"] = 0
+                    for px2, py2 in puzzle["positions"]:
+                        gs.tiles[py2][px2] = T_PEDESTAL_UNLIT
+                    gs.msg("Wrong sequence! The pedestals go dark.", C_RED)
+                    # Refund torch fuel since we'll deduct again
+                    gs.player.torch_fuel += 10
+                    return False
+    return True
+
+def enchant_weapon_headless(gs):
+    """Apply a random enchantment to the player's equipped weapon (headless)."""
+    p = gs.player
+    if gs.tiles[p.y][p.x] != T_ENCHANT_ANVIL:
+        gs.msg("You need to be at an enchanting anvil!", C_RED)
+        return False
+    if not p.weapon:
+        gs.msg("You have no weapon equipped!", C_RED)
+        return False
+    if p.gold < B["enchant_gold_cost"]:
+        gs.msg(f"You need {B['enchant_gold_cost']} gold to enchant! (Have: {p.gold})", C_RED)
+        return False
+    if p.weapon.data.get("enchantment"):
+        gs.msg("This weapon is already enchanted!", C_YELLOW)
+        return False
+    p.gold -= B["enchant_gold_cost"]
+    enchant_key = random.choice(list(ENCHANTMENTS.keys()))
+    enchant = ENCHANTMENTS[enchant_key]
+    p.weapon.data["enchantment"] = enchant_key
+    p.weapon.data["enchant_bonus_dmg"] = enchant["bonus_dmg"]
+    p.weapon.data["enchant_proc_chance"] = enchant["proc_chance"]
+    p.weapon.data["enchant_proc_effect"] = enchant["proc_effect"]
+    old_name = p.weapon.subtype
+    p.weapon.subtype = f"{enchant['name']} {old_name}"
+    gs.msg(f"Your {old_name} is now enchanted with {enchant['name']}!", C_GOLD)
+    gs.msg(f"  {enchant['desc']}", C_YELLOW)
+    return True
+
+
+def _interact_npc(gs, npc):
+    """Handle NPC encounter interaction."""
+    npc["interacted"] = True
+    gs.msg(f'{npc["name"]}: "{npc["dialogue"]}"', C_YELLOW)
+    p = gs.player
+
+    if npc["interaction"] == "gift":
+        item = gs._random_item(npc["x"], npc["y"], p.floor + 1)
+        if item:
+            item.identified = True
+            gs.items.append(item)
+            gs.msg(f"The {npc['name']} gives you a {item.subtype}!", C_GOLD)
+
+    elif npc["interaction"] == "buff":
+        buff_type = random.choice(["Strength", "Resistance", "Speed"])
+        if buff_type == "Strength":
+            p.status_effects["Strength"] = 30
+            gs.msg("You feel surging power! (+Strength for 30 turns)", C_GREEN)
+        elif buff_type == "Resistance":
+            p.status_effects["Resistance"] = 30
+            gs.msg("A protective ward surrounds you! (+Resistance for 30 turns)", C_CYAN)
+        elif buff_type == "Speed":
+            p.status_effects["Speed"] = 30
+            gs.msg("Your reflexes sharpen! (+Speed for 30 turns)", C_YELLOW)
+
+    elif npc["interaction"] == "warning":
+        # Give a weapon and bestiary hint
+        item = gs._random_item(npc["x"], npc["y"], p.floor + 2)
+        if item:
+            item.identified = True
+            gs.items.append(item)
+            gs.msg(f"The knight hands you a {item.subtype}.", C_GOLD)
+        gs.msg("'The next boss is vulnerable to fire and cold. Remember that.'", C_YELLOW)
+
+    elif npc["interaction"] == "reveal":
+        # Reveal the entire map
+        for y in range(MAP_H):
+            for x in range(MAP_W):
+                gs.explored[y][x] = True
+        gs.msg("The ghost reveals the entire floor to you!", C_MAGENTA)
+
+    elif npc["interaction"] == "shop":
+        # Mini-shop: give player 2-3 identified items nearby
+        count = random.randint(2, 3)
+        for _ in range(count):
+            item = gs._random_item(npc["x"], npc["y"], p.floor + 1)
             if item:
                 item.identified = True
+                item.x = npc["x"] + random.randint(-1, 1)
+                item.y = npc["y"] + random.randint(-1, 1)
                 gs.items.append(item)
-            gs.msg("All pedestals lit! A chest materializes!", C_GOLD)
-    return True
+        gs.msg(f"The merchant spreads out {count} items for you!", C_GOLD)
+
 
 def show_journal(scr, gs):
     """Display journal of identified items (#6)."""
@@ -4055,6 +4988,8 @@ def player_move(gs, dx, dy):
             gs.msg("A shop! Press '$' to browse.", C_GOLD)
     elif tile == T_ALCHEMY_TABLE:
         gs.msg("An alchemy table! Press 'a' to identify.", C_CYAN)
+    elif tile == T_ENCHANT_ANVIL:
+        gs.msg(f"An enchanting anvil! Press 'E' to enchant ({B['enchant_gold_cost']} gold).", C_GOLD)
     elif tile == T_PEDESTAL_UNLIT:
         gs.msg("An unlit pedestal. Step on it to light (costs torch fuel).", C_YELLOW)
     elif tile == T_SWITCH_OFF:
@@ -4063,6 +4998,23 @@ def player_move(gs, dx, dy):
         _toggle_switch(gs, nx, ny)
     elif tile == T_STAIRS_LOCKED:
         gs.msg("The stairs are sealed! Solve the puzzle to unlock.", C_RED)
+    # Vignette interaction
+    for vig in gs.vignettes:
+        if vig["x"] == nx and vig["y"] == ny and not vig["examined"]:
+            vig["examined"] = True
+            gs.msg(f"[{vig['name']}] {vig['lore']}", C_MAGENTA)
+            # Chance to spawn minor loot
+            if not vig["loot_spawned"] and random.random() < vig["loot_chance"]:
+                vig["loot_spawned"] = True
+                item = gs._random_item(nx, ny, min(gs.player.floor + vig["loot_tier"], MAX_FLOORS))
+                if item:
+                    item.identified = True
+                    gs.items.append(item)
+                    gs.msg(f"You find something useful nearby!", C_GOLD)
+    # NPC interaction
+    for npc in gs.npcs:
+        if npc["x"] == nx and npc["y"] == ny and not npc["interacted"]:
+            _interact_npc(gs, npc)
     return True
 
 
@@ -4324,7 +5276,8 @@ def render_sidebar(scr, gs):
     # Status effects with overflow cap (Phase 2 item 6)
     STATUS_COLORS = {"Poison": C_GREEN, "Paralysis": C_YELLOW, "Fear": C_MAGENTA,
                      "Berserk": C_RED, "Blindness": C_DARK, "Speed": C_CYAN,
-                     "Strength": C_RED, "Resistance": C_BLUE, "Confusion": C_MAGENTA}
+                     "Strength": C_RED, "Resistance": C_BLUE, "Confusion": C_MAGENTA,
+                     "Frozen": C_CYAN, "Silence": C_MAGENTA}
     y = row
     max_effect_lines = SCREEN_H - 1 - y  # lines available
     effects_list = list(p.status_effects.items())
@@ -5583,7 +6536,74 @@ def _default_lifetime_stats():
         "total_turns": 0,
         "total_kills": 0,
         "most_kills_single_run": 0,
+        # Meta-progression unlocks (Phase 3)
+        "unlocks": [],
     }
+
+
+# Meta-progression unlock definitions
+META_UNLOCKS = {
+    "extra_potion": {"name": "Potion Affinity", "desc": "Start with an extra potion", "req": "total_games >= 3"},
+    "map_reveal": {"name": "Cartographer", "desc": "Start with partial map reveal", "req": "highest_floor >= 5"},
+    "bonus_gold": {"name": "Inheritance", "desc": "Start with 50 bonus gold", "req": "total_kills >= 50"},
+    "extra_hp": {"name": "Hardy Constitution", "desc": "Start with +10 max HP", "req": "total_deaths >= 5"},
+    "torch_bonus": {"name": "Prepared Explorer", "desc": "Start with extra torch fuel", "req": "highest_floor >= 10"},
+    "mana_bonus": {"name": "Magical Aptitude", "desc": "Start with +5 max mana", "req": "total_wins >= 1"},
+    "starting_weapon": {"name": "Armed & Ready", "desc": "Start with a tier 2 weapon", "req": "most_kills_single_run >= 30"},
+}
+
+
+def check_meta_unlocks(stats):
+    """Check which meta-progression unlocks the player has earned."""
+    unlocks = list(stats.get("unlocks", []))
+    for key, unlock in META_UNLOCKS.items():
+        if key in unlocks:
+            continue
+        req = unlock["req"]
+        # Parse simple requirement: "stat_name >= value"
+        parts = req.split()
+        if len(parts) == 3:
+            stat_name, op, value = parts[0], parts[1], int(parts[2])
+            stat_val = stats.get(stat_name, 0)
+            if op == ">=" and stat_val >= value:
+                unlocks.append(key)
+    return unlocks
+
+
+def apply_meta_unlocks(gs):
+    """Apply meta-progression bonuses at game start."""
+    stats = load_lifetime_stats()
+    unlocks = stats.get("unlocks", [])
+    p = gs.player
+    for key in unlocks:
+        if key == "extra_potion":
+            # Give random potion
+            item = gs._random_item(p.x, p.y, 1)
+            if item and item.item_type == "potion":
+                p.inventory.append(item)
+        elif key == "bonus_gold":
+            p.gold += 50
+        elif key == "extra_hp":
+            p.max_hp += 10
+            p.hp += 10
+        elif key == "torch_bonus":
+            p.torch_fuel = min(TORCH_MAX_FUEL, p.torch_fuel + 100)
+        elif key == "mana_bonus":
+            p.max_mana += 5
+            p.mana += 5
+        elif key == "map_reveal":
+            # Reveal 30% of explored tiles
+            for y in range(MAP_H):
+                for x in range(MAP_W):
+                    if random.random() < 0.30:
+                        gs.explored[y][x] = True
+        elif key == "starting_weapon":
+            weapons_t2 = [w for w in WEAPON_TYPES if w.get("tier", 1) == 2]
+            if weapons_t2:
+                w = random.choice(weapons_t2)
+                item = Item(p.x, p.y, "weapon", w["name"], w)
+                item.identified = True
+                p.inventory.append(item)
 
 
 def load_lifetime_stats():
@@ -5596,7 +6616,12 @@ def load_lifetime_stats():
             return _default_lifetime_stats()
         defaults = _default_lifetime_stats()
         for key in defaults:
-            if key not in data or not isinstance(data[key], (int, float)):
+            if key not in data:
+                data[key] = defaults[key]
+            elif key == "unlocks":
+                if not isinstance(data[key], list):
+                    data[key] = defaults[key]
+            elif not isinstance(data[key], (int, float)):
                 data[key] = defaults[key]
         return data
     except (FileNotFoundError, json.JSONDecodeError, OSError, ValueError):
@@ -5627,6 +6652,17 @@ def update_lifetime_stats(gs):
     stats["total_turns"] += gs.turn_count
     stats["total_kills"] += p.kills
     stats["most_kills_single_run"] = max(stats["most_kills_single_run"], p.kills)
+    # Check meta-progression unlocks
+    new_unlocks = check_meta_unlocks(stats)
+    old_unlocks = stats.get("unlocks", [])
+    if not isinstance(old_unlocks, list):
+        old_unlocks = []
+    for u in new_unlocks:
+        if u not in old_unlocks:
+            old_unlocks.append(u)
+            if not gs._headless:
+                gs.msg(f"META UNLOCK: {META_UNLOCKS[u]['name']} — {META_UNLOCKS[u]['desc']}!", C_GOLD)
+    stats["unlocks"] = old_unlocks
     save_lifetime_stats(stats)
     return stats
 
@@ -5718,6 +6754,8 @@ def save_game(gs):
             "evasion_bonus": getattr(p, '_evasion_bonus', 0),
             "known_spells": sorted(p.known_spells),
             "known_abilities": sorted(p.known_abilities),
+            "bleed_stacks": p.bleed_stacks,
+            "bleed_turns": p.bleed_turns,
             "status_effects": dict(p.status_effects),
             "inventory": [_serialize_item(it) for it in p.inventory],
             "weapon_idx": p.inventory.index(p.weapon) if p.weapon and p.weapon in p.inventory else -1,
@@ -5748,6 +6786,8 @@ def save_game(gs):
         "branch_choices": gs.branch_choices,
         "active_branch": gs.active_branch,
         "bestiary": gs.bestiary,
+        "vignettes": gs.vignettes,
+        "npcs": gs.npcs,
         "shops": [
             {
                 "room": list(room),
@@ -5822,6 +6862,8 @@ def load_game():
         else:
             p.known_spells = set(BASE_SPELLS)
         p.known_abilities = set(pd.get("known_abilities", []))
+        p.bleed_stacks = pd.get("bleed_stacks", 0)
+        p.bleed_turns = pd.get("bleed_turns", 0)
         p.status_effects = pd.get("status_effects", {})
         # Restore inventory
         p.inventory = [_deserialize_item(d) for d in pd.get("inventory", [])]
@@ -5857,6 +6899,8 @@ def load_game():
         gs.branch_choices = {int(k): v for k, v in data.get("branch_choices", {}).items()}
         gs.active_branch = data.get("active_branch", None)
         gs.bestiary = data.get("bestiary", {})
+        gs.vignettes = data.get("vignettes", [])
+        gs.npcs = data.get("npcs", [])
         gs.rooms = []  # rooms not needed after generation
         # Restore shops
         gs.shops = []
@@ -5920,6 +6964,20 @@ def _serialize_enemy(e):
         d["fleeing"] = True
     if e.regen_suppressed > 0:
         d["regen_suppressed"] = e.regen_suppressed
+    # Expansion phase fields
+    if e.boss_phase > 1:
+        d["boss_phase"] = e.boss_phase
+    if e.boss_phase_turn > 0:
+        d["boss_phase_turn"] = e.boss_phase_turn
+    if e.bleed_stacks > 0:
+        d["bleed_stacks"] = e.bleed_stacks
+    if e.bleed_turns > 0:
+        d["bleed_turns"] = e.bleed_turns
+    if e.silenced_turns > 0:
+        d["silenced_turns"] = e.silenced_turns
+    # Apex enemy fields
+    if e.breath_cooldown > 0:
+        d["breath_cooldown"] = e.breath_cooldown
     return d
 
 
@@ -5951,6 +7009,14 @@ def _deserialize_enemy(d):
     e.poisoned_turns = d.get("poisoned_turns", 0)
     e.fleeing = d.get("fleeing", False)
     e.regen_suppressed = d.get("regen_suppressed", 0)
+    # Expansion phase fields
+    e.boss_phase = d.get("boss_phase", 1)
+    e.boss_phase_turn = d.get("boss_phase_turn", 0)
+    e.bleed_stacks = d.get("bleed_stacks", 0)
+    e.bleed_turns = d.get("bleed_turns", 0)
+    e.silenced_turns = d.get("silenced_turns", 0)
+    # Apex enemy fields
+    e.breath_cooldown = d.get("breath_cooldown", 0)
     return e
 
 
@@ -6125,6 +7191,20 @@ def _init_new_game(gs):
         gs.recorder = None
     gs.msg("You descend into the darkness beneath Thornhaven...", C_YELLOW)
     gs.msg("Press ? for help.", C_DARK)
+    # Apply challenge modes (Phase 4)
+    gs.challenge_ironman = _CHALLENGE_MODES.get("ironman", False)
+    gs.challenge_speedrun = _CHALLENGE_MODES.get("speedrun", False)
+    gs.challenge_pacifist = _CHALLENGE_MODES.get("pacifist", False)
+    gs.challenge_dark = _CHALLENGE_MODES.get("dark", False)
+    if gs.challenge_ironman:
+        gs.msg("IRONMAN MODE: No saves. Death is permanent.", C_RED)
+    if gs.challenge_speedrun:
+        gs.msg("SPEEDRUN MODE: Clear each floor before time runs out!", C_RED)
+    if gs.challenge_pacifist:
+        gs.msg("PACIFIST MODE: You must not kill any non-boss enemy.", C_RED)
+    if gs.challenge_dark:
+        gs.player.torch_fuel = min(50, gs.player.torch_fuel)
+        gs.msg("DARK MODE: Light is scarce. Tread carefully.", C_RED)
 
 
 def game_loop(scr):
@@ -6209,6 +7289,17 @@ def game_loop(scr):
         if "Paralysis" in gs.player.status_effects:
             render_game(scr, gs)
             gs.msg("You are paralyzed!", C_YELLOW)
+            gs.turn_count += 1
+            process_enemies(gs)
+            process_status(gs)
+            if gs.player.hp <= 0:
+                gs.game_over = True
+            curses.napms(200)
+            continue
+        # Frozen: skip turn, take bonus damage if hit (shatter)
+        if "Frozen" in gs.player.status_effects:
+            render_game(scr, gs)
+            gs.msg("You are frozen solid!", C_CYAN)
             gs.turn_count += 1
             process_enemies(gs)
             process_status(gs)
@@ -6309,10 +7400,10 @@ def game_loop(scr):
             turn_spent = player_move(gs, dx, dy)
         elif key == ord('>'):
             if gs.player.floor == MAX_FLOORS:
-                boss_alive = any(e.boss and e.etype == "dread_lord" and e.is_alive()
+                boss_alive = any(e.boss and e.etype == "abyssal_horror" and e.is_alive()
                                 for e in gs.enemies)
                 if boss_alive:
-                    gs.msg("The Dread Lord still lives!", C_RED)
+                    gs.msg("The Abyssal Horror still lives!", C_RED)
                 else:
                     gs.victory = True
                     gs.game_over = True
@@ -6413,6 +7504,13 @@ def game_loop(scr):
                 turn_spent = _interact_pedestal(gs, px, py)
             else:
                 gs.msg("Nothing to interact with here.", C_DARK)
+        elif key == ord('E'):
+            # Enchant weapon at anvil (Phase 4)
+            px, py = gs.player.x, gs.player.y
+            if gs.tiles[py][px] == T_ENCHANT_ANVIL:
+                turn_spent = enchant_weapon_headless(gs)
+            else:
+                gs.msg("You need to be at an enchanting anvil!", C_DARK)
         elif key == ord('T'):
             # Toggle torch on/off to conserve fuel
             p = gs.player
@@ -9228,6 +10326,11 @@ def _parse_args():
     parser.add_argument("--replay", type=str, default="", help="Replay a recorded session")
     parser.add_argument("--speed", type=float, default=1.0, help="Replay/bot speed multiplier")
     parser.add_argument("--recordings", action="store_true", help="List saved recordings")
+    # Challenge modes (Phase 4)
+    parser.add_argument("--ironman", action="store_true", help="Ironman: no save/load, permadeath only")
+    parser.add_argument("--speedrun", action="store_true", help="Speedrun: turn timer, no resting")
+    parser.add_argument("--pacifist", action="store_true", help="Pacifist: no direct kills allowed")
+    parser.add_argument("--dark", action="store_true", help="Dark mode: reduced FOV, no map reveal")
     return parser.parse_args()
 
 
@@ -9259,4 +10362,9 @@ if __name__ == "__main__":
                 sys.exit(1)
         curses.wrapper(lambda scr: replay_session(scr, filepath, speed=args.speed))
     else:
+        # Apply challenge modes
+        _CHALLENGE_MODES["ironman"] = args.ironman
+        _CHALLENGE_MODES["speedrun"] = args.speedrun
+        _CHALLENGE_MODES["pacifist"] = args.pacifist
+        _CHALLENGE_MODES["dark"] = args.dark
         main()
