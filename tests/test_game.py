@@ -28,6 +28,7 @@ from collections import deque
 # Import game module
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 from depths_of_dread import game as dungeon
+from depths_of_dread import constants as _constants
 from depths_of_dread.game import (
     GameState, Player, Enemy, Item, BSPNode, ShopItem,
     generate_dungeon, compute_fov, astar, flood_fill_count, count_walkable,
@@ -693,14 +694,14 @@ class TestCompatibility:
     def test_color_fallback(self):
         """Game handles no-color terminals gracefully."""
         # Test the safe_color_pair fallback
-        dungeon.HAS_COLORS = False
+        _constants.HAS_COLORS = False
         attr = dungeon.safe_color_pair(C_RED)
         assert attr != 0  # should return some attribute
         attr = dungeon.safe_color_pair(C_DARK)
         assert attr != 0
         attr = dungeon.safe_color_pair(C_PLAYER)
         assert attr != 0
-        dungeon.HAS_COLORS = True  # restore
+        _constants.HAS_COLORS = True  # restore
 
     def test_minimum_terminal_size_constants(self):
         """Minimum terminal size constants are defined and reasonable."""
@@ -1044,6 +1045,9 @@ class TestPortability:
         # Optional imports wrapped in try/except are allowed
         optional_modules = {'agent_commons'}
         for line in import_lines:
+            # Skip relative imports (internal package modules)
+            if line.startswith('from .'):
+                continue
             # Extract module name
             if line.startswith('from '):
                 mod = line.split()[1].split('.')[0]
@@ -1396,8 +1400,10 @@ class TestSessionRecording:
 
     @pytest.fixture(autouse=True)
     def setup_temp_dir(self, tmp_path, monkeypatch):
+        from depths_of_dread import persistence as _persist
         self.rec_dir = str(tmp_path / "recordings")
         monkeypatch.setattr(dungeon, 'RECORDINGS_DIR', self.rec_dir)
+        monkeypatch.setattr(_persist, 'RECORDINGS_DIR', self.rec_dir)
 
     def test_recording_creates_jsonl_file(self):
         rec = SessionRecorder(12345)
@@ -1753,8 +1759,10 @@ class TestStatsFile:
 
     @pytest.fixture(autouse=True)
     def setup_temp_stats(self, tmp_path, monkeypatch):
+        from depths_of_dread import persistence as _persist
         self.stats_path = str(tmp_path / "stats.json")
         monkeypatch.setattr(dungeon, 'STATS_FILE_PATH', self.stats_path)
+        monkeypatch.setattr(_persist, 'STATS_FILE_PATH', self.stats_path)
 
     def test_stats_creates_on_first_game(self):
         stats = load_lifetime_stats()
@@ -3245,8 +3253,8 @@ class TestMysteryMeatDeath:
         meat = Item(0, 0, "food", 0, {"name": "Mystery Meat", "nutrition": 20})
         p.inventory.append(meat)
         # Force bad RNG: random() < 0.2 (triggers poison) and randint returns high dmg
-        with patch('depths_of_dread.game.random.random', return_value=0.0), \
-             patch('depths_of_dread.game.random.randint', return_value=5):
+        with patch('depths_of_dread.items.random.random', return_value=0.0), \
+             patch('depths_of_dread.items.random.randint', return_value=5):
             use_food(gs, meat)
         assert gs.game_over is True
         assert gs.death_cause == "food poisoning"
@@ -3260,8 +3268,8 @@ class TestMysteryMeatDeath:
         p.max_hp = 100
         meat = Item(0, 0, "food", 0, {"name": "Mystery Meat", "nutrition": 20})
         p.inventory.append(meat)
-        with patch('depths_of_dread.game.random.random', return_value=0.0), \
-             patch('depths_of_dread.game.random.randint', return_value=5):
+        with patch('depths_of_dread.items.random.random', return_value=0.0), \
+             patch('depths_of_dread.items.random.randint', return_value=5):
             use_food(gs, meat)
         assert gs.game_over is False
         assert p.hp == 95
@@ -3277,8 +3285,8 @@ class TestMysteryMeatDeath:
         meat = Item(0, 0, "food", 0, {"name": "Mystery Meat", "nutrition": 20})
         p.inventory.append(meat)
         assert len(p.inventory) == 1
-        with patch('depths_of_dread.game.random.random', return_value=0.0), \
-             patch('depths_of_dread.game.random.randint', return_value=5):
+        with patch('depths_of_dread.items.random.random', return_value=0.0), \
+             patch('depths_of_dread.items.random.randint', return_value=5):
             use_food(gs, meat)
         assert meat not in p.inventory
 
@@ -3290,8 +3298,8 @@ class TestMysteryMeatDeath:
         p.hp = 1
         meat = Item(0, 0, "food", 0, {"name": "Mystery Meat", "nutrition": 20})
         p.inventory.append(meat)
-        with patch('depths_of_dread.game.random.random', return_value=0.0), \
-             patch('depths_of_dread.game.random.randint', return_value=5):
+        with patch('depths_of_dread.items.random.random', return_value=0.0), \
+             patch('depths_of_dread.items.random.randint', return_value=5):
             use_food(gs, meat)
         assert "food poisoning" in gs.death_cause.lower()
 
@@ -3323,7 +3331,7 @@ class TestRangedAttackDeathCause:
         # Process enemies — archer should shoot and kill
         compute_fov(gs.tiles, p.x, p.y, 8, gs.visible)
         # Force hit (not dodge) and ensure damage kills
-        with patch('depths_of_dread.game.random.randint', side_effect=lambda a, b: b):  # max damage
+        with patch('depths_of_dread.combat.random.randint', side_effect=lambda a, b: b):  # max damage
             process_enemies(gs)
         if gs.game_over:
             assert "Dark Archer" in gs.death_cause or "shot by" in gs.death_cause
@@ -3356,8 +3364,8 @@ class TestRangedAttackDeathCause:
         # Verify LOS exists
         has_los = _has_los(gs.tiles, archer.x, archer.y, p.x, p.y)
         if has_los:
-            with patch('depths_of_dread.game.random.randint', side_effect=lambda a, b: b), \
-                 patch('depths_of_dread.game.random.random', return_value=1.0):  # no evasion
+            with patch('depths_of_dread.combat.random.randint', side_effect=lambda a, b: b), \
+                 patch('depths_of_dread.combat.random.random', return_value=1.0):  # no evasion
                 _ranged_move(gs, archer)
             if gs.game_over:
                 assert gs.death_cause == f"shot by {archer.name}"
@@ -3557,8 +3565,9 @@ class TestDeathScreenKeys:
 
     def test_death_screen_prompt_text(self):
         """Verify death screen uses ENTER/SPACE prompt."""
-        from depths_of_dread import game as dungeon
-        source = open(dungeon.__file__).read()
+        import os, glob as _glob
+        _pkg_dir = os.path.dirname(dungeon.__file__)
+        source = '\n'.join(open(f).read() for f in _glob.glob(os.path.join(_pkg_dir, '*.py')))
         assert "Press ENTER or SPACE to continue" in source
 
 
@@ -3566,8 +3575,9 @@ class TestHUDLabels:
     """#5: W:/A: renamed to Wpn:/Arm:"""
 
     def test_sidebar_uses_wpn_arm_labels(self):
-        from depths_of_dread import game as dungeon
-        source = open(dungeon.__file__).read()
+        import os, glob as _glob
+        _pkg_dir = os.path.dirname(dungeon.__file__)
+        source = '\n'.join(open(f).read() for f in _glob.glob(os.path.join(_pkg_dir, '*.py')))
         assert 'Wpn:' in source
         assert 'Arm:' in source
 
@@ -3576,8 +3586,9 @@ class TestWeaponArmorStats:
     """#22: Weapon damage and armor defense shown on HUD."""
 
     def test_weapon_stats_in_sidebar_code(self):
-        from depths_of_dread import game as dungeon
-        source = open(dungeon.__file__).read()
+        import os, glob as _glob
+        _pkg_dir = os.path.dirname(dungeon.__file__)
+        source = '\n'.join(open(f).read() for f in _glob.glob(os.path.join(_pkg_dir, '*.py')))
         # Sidebar should format weapon dmg range
         assert 'lo, hi = p.weapon.data["dmg"]' in source
 
@@ -3639,13 +3650,15 @@ class TestHelpContent:
     """#18, #21: Help mentions shops and save/load."""
 
     def test_help_mentions_shops(self):
-        from depths_of_dread import game as dungeon
-        source = open(dungeon.__file__).read()
+        import os, glob as _glob
+        _pkg_dir = os.path.dirname(dungeon.__file__)
+        source = '\n'.join(open(f).read() for f in _glob.glob(os.path.join(_pkg_dir, '*.py')))
         assert "Shops on odd floors" in source
 
     def test_help_mentions_save(self):
-        from depths_of_dread import game as dungeon
-        source = open(dungeon.__file__).read()
+        import os, glob as _glob
+        _pkg_dir = os.path.dirname(dungeon.__file__)
+        source = '\n'.join(open(f).read() for f in _glob.glob(os.path.join(_pkg_dir, '*.py')))
         assert "Save & Quit" in source
 
 
@@ -3653,8 +3666,9 @@ class TestInventoryStats:
     """#23: Stats shown on inventory screen."""
 
     def test_inventory_header_has_stats(self):
-        from depths_of_dread import game as dungeon
-        source = open(dungeon.__file__).read()
+        import os, glob as _glob
+        _pkg_dir = os.path.dirname(dungeon.__file__)
+        source = '\n'.join(open(f).read() for f in _glob.glob(os.path.join(_pkg_dir, '*.py')))
         assert "HP:" in source and "MP:" in source and "Hunger:" in source
 
 
@@ -3945,8 +3959,9 @@ class TestReplayPrompt:
     """#3: Auto-replay prompt code exists."""
 
     def test_replay_prompt_in_source(self):
-        from depths_of_dread import game as dungeon
-        source = open(dungeon.__file__).read()
+        import os, glob as _glob
+        _pkg_dir = os.path.dirname(dungeon.__file__)
+        source = '\n'.join(open(f).read() for f in _glob.glob(os.path.join(_pkg_dir, '*.py')))
         assert "Watch replay?" in source
 
 
@@ -3954,13 +3969,15 @@ class TestTechniqueHint:
     """#2/#4: Technique hint on HUD."""
 
     def test_technique_hint_in_sidebar(self):
-        from depths_of_dread import game as dungeon
-        source = open(dungeon.__file__).read()
+        import os, glob as _glob
+        _pkg_dir = os.path.dirname(dungeon.__file__)
+        source = '\n'.join(open(f).read() for f in _glob.glob(os.path.join(_pkg_dir, '*.py')))
         assert "[t]" in source or "Techniques" in source
 
     def test_mage_spell_hint_in_sidebar(self):
-        from depths_of_dread import game as dungeon
-        source = open(dungeon.__file__).read()
+        import os, glob as _glob
+        _pkg_dir = os.path.dirname(dungeon.__file__)
+        source = '\n'.join(open(f).read() for f in _glob.glob(os.path.join(_pkg_dir, '*.py')))
         assert "[z]Spells" in source
 
 
@@ -4390,7 +4407,7 @@ class TestResistanceSystem:
         e.hp = e.max_hp - 5  # Below max so regen would trigger
         gs.enemies = [e]
         old_hp = e.hp
-        with patch('depths_of_dread.game.random') as mock_rng:
+        with patch('depths_of_dread.combat.random') as mock_rng:
             mock_rng.random.return_value = 0.99
             mock_rng.randint.return_value = 1
             process_enemies(gs)
@@ -4493,7 +4510,7 @@ class TestTrapSystem:
                 "visible": False, "triggered": False, "disarmed": False}
         gs.traps = [trap]
         # Force detection
-        with patch('depths_of_dread.game.random') as mock_rng:
+        with patch('depths_of_dread.combat.random') as mock_rng:
             mock_rng.randint.return_value = 1  # Low roll, should detect (1 <= 30)
             _passive_trap_detect(gs)
         assert trap["visible"]
@@ -4517,7 +4534,7 @@ class TestTrapSystem:
         trap = {"x": gs.player.x + 1, "y": gs.player.y, "type": "spike",
                 "visible": False, "triggered": False, "disarmed": False}
         gs.traps = [trap]
-        with patch('depths_of_dread.game.random') as mock_rng:
+        with patch('depths_of_dread.combat.random') as mock_rng:
             mock_rng.randint.return_value = 20  # High roll
             _search_for_traps(gs)
         assert trap["visible"]
@@ -4529,7 +4546,7 @@ class TestTrapSystem:
         trap = {"x": gs.player.x + 1, "y": gs.player.y, "type": "spike",
                 "visible": True, "triggered": False, "disarmed": False}
         gs.traps = [trap]
-        with patch('depths_of_dread.game.random') as mock_rng:
+        with patch('depths_of_dread.combat.random') as mock_rng:
             mock_rng.randint.return_value = 1  # Low roll, within base 40%
             _disarm_trap(gs)
         assert trap["disarmed"]
@@ -4541,7 +4558,7 @@ class TestTrapSystem:
         trap = {"x": gs.player.x + 1, "y": gs.player.y, "type": "spike",
                 "visible": True, "triggered": False, "disarmed": False}
         gs.traps = [trap]
-        with patch('depths_of_dread.game.random') as mock_rng:
+        with patch('depths_of_dread.combat.random') as mock_rng:
             mock_rng.randint.return_value = 100  # High roll, fail disarm
             _disarm_trap(gs)
         assert trap["triggered"]  # Trap triggered on failure
@@ -4668,7 +4685,7 @@ class TestEnvironmentalInteractions:
         gs.enemies = [e]
         old_hp = p.hp
         # Process enemies — fire aura should be blocked by water
-        with patch('depths_of_dread.game.random') as mock_rng:
+        with patch('depths_of_dread.combat.random') as mock_rng:
             mock_rng.random.return_value = 0.99  # No attacks hit
             mock_rng.randint.return_value = 1
             mock_rng.choice.return_value = (1, 0)
@@ -4689,7 +4706,7 @@ class TestEnvironmentalInteractions:
         e = Enemy(p.x + 1, p.y, "fire_elemental")
         gs.enemies = [e]
         # Process enemies
-        with patch('depths_of_dread.game.random') as mock_rng:
+        with patch('depths_of_dread.combat.random') as mock_rng:
             mock_rng.random.return_value = 0.99
             mock_rng.randint.return_value = 1
             mock_rng.choice.return_value = (1, 0)
@@ -4709,7 +4726,7 @@ class TestEnvironmentalInteractions:
                 if 0 <= p.x + ddx < MAP_W and 0 <= p.y + ddy < MAP_H:
                     gs.tiles[p.y + ddy][p.x + ddx] = T_FLOOR
         old_x, old_y = p.x, p.y
-        with patch('depths_of_dread.game.random') as mock_rng:
+        with patch('depths_of_dread.items.random') as mock_rng:
             mock_rng.choice.return_value = (0, -1)  # Force north
             mock_rng.random.return_value = 0.99
             mock_rng.randint.return_value = 1
