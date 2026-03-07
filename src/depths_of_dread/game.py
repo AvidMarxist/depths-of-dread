@@ -5473,7 +5473,7 @@ def show_help(scr):
             ("  Grab wall torches with ,  Puzzles: * and switches.", C_WHITE),
             ("Shrines: Prayer grants boons, but beware curses.", C_WHITE),
             ("Shops on odd floors (1,3,5,7,...). Press $ to browse.", C_WHITE),
-            ("j=Journal  &=Alchemy table (identifies items)", C_WHITE),
+            ("J=Journal  e=Interact (alchemy table, pedestal)", C_WHITE),
             ("Inventory: [/] scroll, S sort. Better armor auto-equips.", C_WHITE),
             ("Traps: Hidden traps hurt. / to search. D to disarm.", C_WHITE),
             ("Resist: Rings grant fire/cold/poison resistance.", C_WHITE),
@@ -7460,7 +7460,7 @@ def game_loop(scr):
             show_help(scr)
         elif key == ord('m'):
             show_messages(scr, gs)
-        elif key == ord('j'):
+        elif key == ord('J'):
             show_journal(scr, gs)
         elif key == ord('M'):
             show_bestiary(scr, gs)
@@ -7495,7 +7495,7 @@ def game_loop(scr):
         elif key == ord('S'):
             # Lifetime stats overlay
             show_lifetime_stats(scr)
-        elif key == ord('a'):
+        elif key == ord('e'):
             # Alchemy table (#7) or light pedestal (#9)
             px, py = gs.player.x, gs.player.y
             if gs.tiles[py][px] == T_ALCHEMY_TABLE:
@@ -9571,7 +9571,7 @@ def _pilot_process_key(gs, scr, key):
     elif key == ord('i'):
         show_inventory(scr, gs)
         return False
-    elif key == ord('s'):
+    elif key == ord('/'):
         _search_for_traps(gs)
         return True
     elif key == ord('D'):
