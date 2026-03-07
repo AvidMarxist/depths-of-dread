@@ -62,6 +62,10 @@ def use_potion(gs, item):
     elif eff == "Berserk":
         p.status_effects["Berserk"] = B["berserk_duration"]
         gs.msg("BLOOD RAGE! You see red!", C_RED)
+    elif eff == "Mana":
+        restored = min(p.max_mana - p.mana, 15 + p.level * 2)
+        p.mana += restored
+        gs.msg(f"Magical energy floods your mind! (+{restored} MP)", C_CYAN)
     p.inventory.remove(item)
 
 
@@ -404,6 +408,31 @@ def _animate_projectile(gs, path, char='*', color=C_YELLOW):
                 pass
 
 
+def _animate_blast(gs, cx, cy, radius, char='*', color=C_RED):
+    """Flash an AoE blast area for visual feedback (skip in headless)."""
+    if gs._headless or not gs._scr:
+        return
+    scr = gs._scr
+    p = gs.player
+    cam_x = max(0, min(p.x - VIEW_W//2, MAP_W - VIEW_W))
+    cam_y = max(0, min(p.y - VIEW_H//2, MAP_H - VIEW_H))
+    # Draw blast tiles
+    for by in range(cy - radius, cy + radius + 1):
+        for bx in range(cx - radius, cx + radius + 1):
+            sx = bx - cam_x
+            sy = by - cam_y
+            if 0 <= sx < VIEW_W and 0 <= sy < VIEW_H:
+                try:
+                    safe_addstr(scr, sy, sx, char, curses.color_pair(color) | curses.A_BOLD)
+                except Exception:
+                    pass
+    try:
+        scr.refresh()
+        curses.napms(200)
+    except Exception:
+        pass
+
+
 def fire_projectile(gs, scr):
     """Handle 'f' key — fire arrows, throw daggers, or zap wands."""
     p = gs.player
@@ -588,6 +617,7 @@ def cast_spell_menu(gs, scr):
         safe_addstr(scr, y, 22, f"[{info['cost']} MP]", curses.color_pair(cost_color))
         safe_addstr(scr, y, 32, info["desc"][:SCREEN_W-34], curses.color_pair(C_DARK))
 
+    safe_addstr(scr, SCREEN_H-2, 1, "Pick a spell, then choose direction if needed", curses.color_pair(C_DARK))
     safe_addstr(scr, SCREEN_H-1, 1, f"[a-{max_letter}] Cast  [ESC] Cancel", curses.color_pair(C_DARK))
     scr.refresh()
     key = scr.getch()
@@ -662,6 +692,7 @@ def _cast_spell(gs, scr, spell_name, spell_info, direction=None, target_enemy=No
         for i in range(1, 4):
             path.append((p.x + dx*i, p.y + dy*i))
         _animate_projectile(gs, path, '*', C_RED)
+        _animate_blast(gs, cx, cy, 1, '*', C_RED)
         # 3x3 AoE
         kills = 0
         total_dmg = 0
@@ -844,6 +875,7 @@ def _cast_spell(gs, scr, spell_name, spell_info, direction=None, target_enemy=No
         # Blast center is meteor_range tiles in that direction
         cx = p.x + dx * B["meteor_range"]
         cy = p.y + dy * B["meteor_range"]
+        _animate_blast(gs, cx, cy, 2, '#', C_RED)
         # 5x5 AoE
         kills = 0
         total_dmg = 0
@@ -933,6 +965,7 @@ def use_class_ability(gs, scr=None):
             dx, dy = 1, 0  # default for headless
         # Hit 3x3 area, 5 tiles out
         cx, cy = p.x + dx * 5, p.y + dy * 5
+        _animate_blast(gs, cx, cy, 1, '*', C_CYAN)
         hit_count = 0
         kills = 0
         total_dmg = 0
@@ -1169,7 +1202,8 @@ def _journal_potion_desc(eff):
     return {"Healing": "Restores HP", "Strength": "Boost STR temporarily",
             "Speed": "Boost speed temporarily", "Poison": "Deals damage!",
             "Blindness": "Reduces vision!", "Experience": "Grants XP",
-            "Resistance": "Reduces incoming damage", "Berserk": "Rage mode"}.get(eff, eff)
+            "Resistance": "Reduces incoming damage", "Berserk": "Rage mode",
+            "Mana": "Restores MP"}.get(eff, eff)
 
 def _journal_scroll_desc(eff):
     return {"Identify": "Reveals all items", "Teleport": "Random teleport",
@@ -1178,7 +1212,7 @@ def _journal_scroll_desc(eff):
             "Summon": "Summons hostile enemy!", "Lightning": "Zaps nearest enemy"}.get(eff, eff)
 
 def use_alchemy_table(gs):
-    """Use alchemy table to identify a random unidentified item (#7)."""
+    """Use alchemy table to identify items and grant alchemical insights."""
     p = gs.player
     pos_key = (p.x, p.y)
     if gs.tiles[p.y][p.x] != T_ALCHEMY_TABLE:
@@ -1187,30 +1221,64 @@ def use_alchemy_table(gs):
     if pos_key in gs.alchemy_used:
         gs.msg("This table has already been used.", C_DARK)
         return False
-    # Find unidentified potions/scrolls in inventory
+    # Find unidentified potions/scrolls/rings in inventory
     unid = [it for it in p.inventory
-            if it.item_type in ("potion", "scroll") and not it.identified]
+            if it.item_type in ("potion", "scroll", "ring") and not it.identified]
     if not unid:
-        gs.msg("Nothing to identify!", C_DARK)
-        return False
+        # Even with nothing to identify, grant a minor alchemical boon
+        boon = random.choice(["mana", "resist", "clarity"])
+        if boon == "mana" and p.max_mana > 0:
+            restored = min(p.max_mana - p.mana, 10)
+            p.mana += restored
+            gs.msg(f"The table's residual magic restores {restored} MP!", C_CYAN)
+        elif boon == "resist":
+            gs.msg("Alchemical fumes grant temporary Resistance!", C_CYAN)
+            p.status_effects["Resistance"] = p.status_effects.get("Resistance", 0) + 20
+        else:
+            # Reveal trap locations on current floor
+            revealed = 0
+            for trap in gs.traps:
+                if not trap["visible"] and not trap["disarmed"]:
+                    trap["visible"] = True
+                    revealed += 1
+            if revealed:
+                gs.msg(f"The table's vapors reveal {revealed} hidden trap(s)!", C_YELLOW)
+            else:
+                gs.msg("Alchemical vapors swirl but reveal nothing new.", C_CYAN)
+        gs.alchemy_used.add(pos_key)
+        return True
+    # Identify ALL unidentified items of the chosen type
     target = random.choice(unid)
     target.identified = True
     eff = target.data.get("effect", "")
     if target.item_type == "potion":
         gs.id_potions.add(eff)
         gs.journal[f"Potion of {eff}"] = _journal_potion_desc(eff)
-        # Identify all matching in inventory
+        count = 0
         for inv in p.inventory:
             if inv.item_type == "potion" and inv.data.get("effect") == eff:
                 inv.identified = True
-        gs.msg(f"The table reveals: {target.display_name} is a Potion of {eff}!", C_CYAN)
-    else:
+                count += 1
+        desc = _journal_potion_desc(eff)
+        gs.msg(f"Identified: Potion of {eff} — {desc}", C_CYAN)
+        if count > 1:
+            gs.msg(f"  ({count} potions of this type identified!)", C_CYAN)
+    elif target.item_type == "scroll":
         gs.id_scrolls.add(eff)
         gs.journal[f"Scroll of {eff}"] = _journal_scroll_desc(eff)
+        count = 0
         for inv in p.inventory:
             if inv.item_type == "scroll" and inv.data.get("effect") == eff:
                 inv.identified = True
-        gs.msg(f"The table reveals: {target.display_name} is a Scroll of {eff}!", C_CYAN)
+                count += 1
+        desc = _journal_scroll_desc(eff)
+        gs.msg(f"Identified: Scroll of {eff} — {desc}", C_CYAN)
+        if count > 1:
+            gs.msg(f"  ({count} scrolls of this type identified!)", C_CYAN)
+    elif target.item_type == "ring":
+        target.identified = True
+        ring_eff = target.data.get("effect", target.data.get("resist", "unknown"))
+        gs.msg(f"Identified: {target.display_name} — {ring_eff}!", C_CYAN)
     gs.alchemy_used.add(pos_key)
     return True
 
@@ -1331,6 +1399,7 @@ def enchant_weapon_headless(gs):
         gs.msg("This weapon is already enchanted!", C_YELLOW)
         return False
     p.gold -= B["enchant_gold_cost"]
+    p.gold_spent += B["enchant_gold_cost"]
     enchant_key = random.choice(list(ENCHANTMENTS.keys()))
     enchant = ENCHANTMENTS[enchant_key]
     p.weapon.data["enchantment"] = enchant_key
@@ -1516,6 +1585,7 @@ def player_move(gs, dx, dy):
     for item in pickup:
         if item.item_type == "gold":
             p.gold += item.data["amount"]
+            p.gold_earned += item.data["amount"]
             gs.msg(f"Picked up {item.data['amount']} gold.", C_GOLD)
             gs.items.remove(item)
         else:
@@ -1526,6 +1596,7 @@ def player_move(gs, dx, dy):
                 gs.items.remove(item)
                 p.inventory.append(item)
                 p.items_found += 1
+                p.items_by_type[item.item_type] = p.items_by_type.get(item.item_type, 0) + 1
                 gs.msg(f"Picked up {item.display_name}.", item.color)
                 # Auto-equip better armor (#14)
                 if item.item_type == "armor":
@@ -1554,7 +1625,9 @@ def player_move(gs, dx, dy):
         if gs.get_shop_at(nx, ny):
             gs.msg("A shop! Press '$' to browse.", C_GOLD)
     elif tile == T_ALCHEMY_TABLE:
-        gs.msg("An alchemy table! Press 'a' to identify.", C_CYAN)
+        gs.msg("An alchemy table! Press 'e' to use.", C_CYAN)
+    elif tile == T_FOUNTAIN:
+        gs.msg("A magical fountain! Press 'e' to drink.", C_WATER)
     elif tile == T_ENCHANT_ANVIL:
         gs.msg(f"An enchanting anvil! Press 'E' to enchant ({B['enchant_gold_cost']} gold).", C_GOLD)
     elif tile == T_PEDESTAL_UNLIT:

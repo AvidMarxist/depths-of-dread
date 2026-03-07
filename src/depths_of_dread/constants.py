@@ -272,6 +272,13 @@ BALANCE = {
     "asleep_spawn_chance": 0.60,      # 60% of enemies spawn asleep
 }
 
+# Difficulty presets — multipliers applied to BALANCE values
+DIFFICULTY_PRESETS = {
+    "easy":   {"enemy_hp_mult": 0.7, "enemy_dmg_mult": 0.7, "item_mult": 1.3, "food_mult": 1.5, "xp_mult": 1.3, "gold_mult": 1.5},
+    "normal": {"enemy_hp_mult": 1.0, "enemy_dmg_mult": 1.0, "item_mult": 1.0, "food_mult": 1.0, "xp_mult": 1.0, "gold_mult": 1.0},
+    "hard":   {"enemy_hp_mult": 1.4, "enemy_dmg_mult": 1.3, "item_mult": 0.8, "food_mult": 0.7, "xp_mult": 0.8, "gold_mult": 0.7},
+}
+
 # Short alias for tight code paths
 B = BALANCE
 
@@ -376,6 +383,8 @@ T_STAIRS_LOCKED = 16
 T_TRAP_HIDDEN = 17    # Invisible trap (renders as T_FLOOR)
 T_TRAP_VISIBLE = 18   # Revealed trap (renders as '^')
 T_ENCHANT_ANVIL = 19  # Enchanting station (Phase 4)
+T_FOUNTAIN = 20       # Healing fountain
+T_SECRET_WALL = 21    # Hidden wall (looks like T_WALL until searched)
 
 TILE_CHARS = {
     T_WALL: '#', T_FLOOR: '.', T_CORRIDOR: '.', T_DOOR: '+',
@@ -388,12 +397,14 @@ TILE_CHARS = {
     T_TRAP_HIDDEN: '.',   # Looks like floor
     T_TRAP_VISIBLE: '^',  # Revealed trap
     T_ENCHANT_ANVIL: '&', # Enchanting station
+    T_FOUNTAIN: '{',      # Healing fountain
+    T_SECRET_WALL: '#',   # Looks like a normal wall
 }
 
 WALKABLE = {T_FLOOR, T_CORRIDOR, T_DOOR, T_STAIRS_DOWN, T_STAIRS_UP,
             T_WATER, T_SHOP_FLOOR, T_SHRINE, T_ALCHEMY_TABLE,
             T_PEDESTAL_UNLIT, T_PEDESTAL_LIT, T_SWITCH_OFF, T_SWITCH_ON,
-            T_TRAP_HIDDEN, T_TRAP_VISIBLE, T_ENCHANT_ANVIL}
+            T_TRAP_HIDDEN, T_TRAP_VISIBLE, T_ENCHANT_ANVIL, T_FOUNTAIN}
 
 THEMES = [
     "Dungeon", "Dungeon", "Dungeon",
@@ -613,8 +624,8 @@ ARMOR_TYPES = [
     {"name": "Dread Plate",     "char": '[', "defense": 10, "desc": "Forged in the abyss.", "tier": 5},
 ]
 
-POTION_EFFECTS = ["Healing", "Strength", "Speed", "Poison", "Blindness", "Experience", "Resistance", "Berserk"]
-POTION_COLORS = ["Red", "Blue", "Green", "Murky", "Glowing", "Bubbling", "Shimmering", "Dark"]
+POTION_EFFECTS = ["Healing", "Strength", "Speed", "Poison", "Blindness", "Experience", "Resistance", "Berserk", "Mana"]
+POTION_COLORS = ["Red", "Blue", "Green", "Murky", "Glowing", "Bubbling", "Shimmering", "Dark", "Azure"]
 
 SCROLL_EFFECTS = ["Identify", "Teleport", "Fireball", "Mapping", "Enchant", "Fear", "Summon", "Lightning"]
 SCROLL_LABELS = ["XYZZY", "PLUGH", "ABRACADABRA", "KLAATU", "LOREM", "IPSUM", "NIHIL", "VERITAS"]

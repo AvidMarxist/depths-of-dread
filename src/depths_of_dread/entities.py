@@ -198,6 +198,17 @@ class Player:
         self.projectiles_fired = 0
         self.pending_levelups = []  # Deferred level-up choices
         self.ability_cooldown = 0   # Class ability cooldown
+        # Telemetry counters
+        self.gold_earned = 0
+        self.gold_spent = 0
+        self.torches_grabbed = 0
+        self.traps_triggered = 0
+        self.traps_found = 0
+        self.traps_disarmed = 0
+        self.fountains_used = 0
+        self.secrets_found = 0
+        self.kills_by_type = {}     # {enemy_type: count}
+        self.items_by_type = {}     # {item_type: count}
         # Known spells — class-specific starting sets
         if player_class and player_class in CLASS_KNOWN_SPELLS:
             self.known_spells = set(CLASS_KNOWN_SPELLS[player_class])

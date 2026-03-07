@@ -136,6 +136,20 @@ def _draw_tile(scr, sy, sx, tile, lit, floor_num):
             a = curses.color_pair(C_YELLOW) | curses.A_BOLD
         elif tile == T_STAIRS_LOCKED:
             a = curses.color_pair(C_RED) | curses.A_BOLD
+        elif tile == T_FOUNTAIN:
+            a = curses.color_pair(C_WATER) | curses.A_BOLD
+        elif tile == T_SECRET_WALL:
+            # Render exactly like T_WALL — indistinguishable
+            if floor_num <= 3:
+                a = curses.color_pair(C_WHITE) | curses.A_DIM
+            elif floor_num <= 6:
+                a = curses.color_pair(C_GREEN) | curses.A_DIM
+            elif floor_num <= 9:
+                a = curses.color_pair(C_DARK) | curses.A_DIM
+            elif floor_num <= 12:
+                a = curses.color_pair(C_RED) | curses.A_DIM
+            else:
+                a = curses.color_pair(C_MAGENTA) | curses.A_DIM
         elif tile == T_TRAP_HIDDEN:
             a = curses.color_pair(C_WHITE) | curses.A_DIM  # Looks like floor
         elif tile == T_TRAP_VISIBLE:
@@ -178,7 +192,10 @@ def render_sidebar(scr, gs):
     bar = '#' * filled + '-' * (bw - filled)
     safe_addstr(scr, 4, x, " HP:", curses.color_pair(C_WHITE))
     safe_addstr(scr, 4, x+4, bar, hp_attr)
-    safe_addstr(scr, 5, x, f"    {p.hp}/{p.max_hp}", hp_attr)
+    hp_num_attr = hp_attr
+    if hp_pct <= 0.2:
+        hp_num_attr |= curses.A_BLINK  # Blink when critically low
+    safe_addstr(scr, 5, x, f"    {p.hp}/{p.max_hp}", hp_num_attr)
 
     # Mana bar
     mana_pct = max(0, p.mana / p.max_mana) if p.max_mana > 0 else 0
@@ -237,6 +254,19 @@ def render_sidebar(scr, gs):
         arm = "None"
     safe_addstr(scr, row, x, f" Arm:{arm}", curses.color_pair(C_BLUE))
     row += 1
+    # Ranged weapon on HUD
+    ranged = None
+    for inv in p.inventory:
+        if inv.item_type == "bow":
+            ranged = inv
+            break
+        if inv.item_type == "wand":
+            ranged = inv
+            break
+    if ranged:
+        rng_name = ranged.display_name[:name_w]
+        safe_addstr(scr, row, x, f" Rng:{rng_name}", curses.color_pair(C_YELLOW))
+        row += 1
     rng = p.ring.display_name[:name_w] if p.ring else ""
     if rng:
         safe_addstr(scr, row, x, f" R:{rng}", curses.color_pair(C_CYAN))
@@ -248,15 +278,37 @@ def render_sidebar(scr, gs):
         safe_addstr(scr, row, x, f" Res:{res_str}", curses.color_pair(C_CYAN))
         row += 1
     # Technique/skill hint on HUD (#2/#4)
+    cd_str = f" CD:{p.ability_cooldown}" if p.ability_cooldown > 0 else ""
     if p.player_class == "mage":
-        safe_addstr(scr, row, x, " [z]Spells [C]Blast", curses.color_pair(C_CYAN))
+        safe_addstr(scr, row, x, f" [z]Spells [C]ArcBlast{cd_str}", curses.color_pair(C_CYAN))
         row += 1
+    elif p.player_class == "warrior":
+        safe_addstr(scr, row, x, f" [C]BattleCry{cd_str}", curses.color_pair(C_GREEN))
+        row += 1
+        if p.known_abilities:
+            abilities_list = list(p.known_abilities)
+            if len(abilities_list) == 1:
+                ab_name = abilities_list[0][:12]
+                safe_addstr(scr, row, x, f" [t]{ab_name}", curses.color_pair(C_GREEN))
+            else:
+                safe_addstr(scr, row, x, f" [t]{len(abilities_list)} Techniques", curses.color_pair(C_GREEN))
+            row += 1
+    elif p.player_class == "rogue":
+        safe_addstr(scr, row, x, f" [C]ShadowStep{cd_str}", curses.color_pair(C_GREEN))
+        row += 1
+        if p.known_abilities:
+            abilities_list = list(p.known_abilities)
+            if len(abilities_list) == 1:
+                ab_name = abilities_list[0][:12]
+                safe_addstr(scr, row, x, f" [t]{ab_name}", curses.color_pair(C_GREEN))
+            else:
+                safe_addstr(scr, row, x, f" [t]{len(abilities_list)} Techniques", curses.color_pair(C_GREEN))
+            row += 1
     elif p.player_class and p.known_abilities:
         abilities_list = list(p.known_abilities)
         if len(abilities_list) == 1:
             ab_name = abilities_list[0][:12]
-            cd_str = f" CD:{p.ability_cooldown}" if p.ability_cooldown > 0 else ""
-            safe_addstr(scr, row, x, f" [t]{ab_name}{cd_str}", curses.color_pair(C_GREEN))
+            safe_addstr(scr, row, x, f" [t]{ab_name}", curses.color_pair(C_GREEN))
         else:
             safe_addstr(scr, row, x, f" [t]{len(abilities_list)} Techniques", curses.color_pair(C_GREEN))
         row += 1
@@ -363,7 +415,7 @@ def render_game(scr, gs):
     render_sidebar(scr, gs)
     render_messages(scr, gs)
     safe_addstr(scr, SCREEN_H-1, 0,
-               " ?:Help i:Inv f:Fire z:Spell j:Journal T:Torch >:Down",
+               " ?:Help i:Inv f:Fire z:Spell t:Tech /:Search T:Torch >:Down",
                curses.color_pair(C_DARK) | curses.A_DIM)
     scr.refresh()
 
@@ -462,7 +514,7 @@ def show_help(scr):
             ("> Down    < Up     + Door    ~ Water", C_WHITE),
             ("_ Shrine  $ Gold   @ You     & Alchemy", C_WHITE),
             ("! Wall Torch  * Pedestal  X Locked Stairs", C_WHITE),
-            ("^ Trap (visible)                       ", C_WHITE),
+            ("{ Fountain    ^ Trap (visible)", C_WHITE),
             ("", C_WHITE),
             ("=== Game Mechanics ===", C_YELLOW),
             ("Hunger: Depletes each turn. Eat food (%) to restore.", C_WHITE),
@@ -470,7 +522,7 @@ def show_help(scr):
             ("  Grab wall torches with ,  Puzzles: * and switches.", C_WHITE),
             ("Shrines: Prayer grants boons, but beware curses.", C_WHITE),
             ("Shops on odd floors (1,3,5,7,...). Press $ to browse.", C_WHITE),
-            ("J=Journal  e=Interact (alchemy table, pedestal)", C_WHITE),
+            ("J=Journal  e=Interact (alchemy, pedestal, fountain)", C_WHITE),
             ("Inventory: [/] scroll, S sort. Better armor auto-equips.", C_WHITE),
             ("Traps: Hidden traps hurt. / to search. D to disarm.", C_WHITE),
             ("Resist: Rings grant fire/cold/poison resistance.", C_WHITE),
@@ -862,7 +914,9 @@ def show_character(scr, gs):
         (f"Armor:  {p.armor.display_name if p.armor else 'None'}", C_BLUE),
         (f"Ring:   {p.ring.display_name if p.ring else 'None'}", C_CYAN),
         ("", C_WHITE),
-        (f"Gold: {p.gold}  Kills: {p.kills}  Turns: {gs.turn_count}", C_GOLD),
+        (f"Gold: {p.gold} (earned:{p.gold_earned} spent:{p.gold_spent})  Kills: {p.kills}", C_GOLD),
+        (f"Turns: {gs.turn_count}  Potions: {p.potions_drunk}  Food: {p.foods_eaten}", C_WHITE),
+        (f"Traps: hit:{p.traps_triggered} found:{p.traps_found} disarmed:{p.traps_disarmed}", C_WHITE),
         ("", C_WHITE),
         ("Identified Potions:", C_MAGENTA),
     ]
@@ -954,6 +1008,7 @@ def show_shop(scr, gs):
                     gs.msg("Inventory full!", C_RED)
                 else:
                     p.gold -= si.price
+                    p.gold_spent += si.price
                     ic = Item(0, 0, si.item.item_type, si.item.subtype, si.item.data)
                     ic.identified = True
                     p.inventory.append(ic)
@@ -1020,8 +1075,9 @@ def show_death(scr, gs):
     safe_addstr(scr, sy+12, max(0,(w-len(cause)-10)//2), f"Cause: {cause}", curses.color_pair(C_RED))
     stats = [
         f"Floor: {p.deepest_floor}/{MAX_FLOORS}  Level: {p.level}  Kills: {p.kills}",
-        f"Gold: {p.gold}  Turns: {gs.turn_count}  Time: {m}m{s}s",
-        f"Items: {p.items_found}  Spells: {p.spells_cast}  Shots: {p.projectiles_fired}",
+        f"Gold: {p.gold} (earned:{p.gold_earned} spent:{p.gold_spent})  Turns: {gs.turn_count}  Time: {m}m{s}s",
+        f"Items: {p.items_found}  Potions: {p.potions_drunk}  Food: {p.foods_eaten}  Torches: {p.torches_grabbed}",
+        f"Spells: {p.spells_cast}  Shots: {p.projectiles_fired}  Traps: {p.traps_triggered}",
         f"Damage dealt: {p.damage_dealt}  Taken: {p.damage_taken}",
     ]
     for i, line in enumerate(stats):
@@ -1199,9 +1255,10 @@ def _describe_tile(gs, x, y):
         T_STAIRS_UP: "Stairs up (<)", T_WATER: "Water (shallow)",
         T_LAVA: "Lava (deadly!)", T_SHOP_FLOOR: "Shop floor",
         T_SHRINE: "Shrine (press 'p' to pray)",
-        T_ALCHEMY_TABLE: "Alchemy table (press 'a')",
+        T_ALCHEMY_TABLE: "Alchemy table (press 'e')",
         T_WALL_TORCH: "Wall torch (light source)",
-        T_PEDESTAL_UNLIT: "Unlit pedestal (press 'a')",
+        T_FOUNTAIN: "Magical fountain (press 'e' to drink)",
+        T_PEDESTAL_UNLIT: "Unlit pedestal (press 'e')",
         T_PEDESTAL_LIT: "Lit pedestal",
         T_SWITCH_OFF: "Switch (OFF)",
         T_SWITCH_ON: "Switch (ON)",

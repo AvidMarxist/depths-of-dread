@@ -81,12 +81,16 @@ In Agent mode, press **Shift+P** to enter **Pilot Mode** — take manual control
 ### Other Systems
 - **Bestiary** (press M) — progressive reveal based on encounter count
 - **Puzzle system** — torch pedestals, switches, locked stairs
-- **Alchemy tables** — identify unknown potions and scrolls
+- **Alchemy tables** — identify unknown potions, scrolls, and rings; grant alchemical boons
+- **Fountains** — magical healing waters, chance of permanent +1 max HP
+- **Secret rooms** — hidden chambers behind walls, search (/) to discover, contain valuable loot
 - **Journal** — tracks discovered item effects
 - **Boss weapon drops** — Vampiric Blade with 20% lifesteal
 - **Shops** — spend gold on items mid-dungeon
 - **Shrines** — pray for boons (some are cursed)
 - **Wall torches** — grab for torch fuel
+- **Difficulty modes** — easy, normal, hard (--difficulty flag)
+- **Mana potions** — restore MP for spell-dependent builds
 
 ---
 
@@ -96,24 +100,31 @@ In Agent mode, press **Shift+P** to enter **Pilot Mode** — take manual control
 |-----|--------|
 | Arrow keys / WASD / hjkl / yubn | Move (8 directions) |
 | Walk into enemy | Melee attack |
-| `f` + direction | Fire projectile |
-| `z` | Spell menu |
-| `e` | Use potion |
-| `E` | Eat food |
-| `i` | Inventory |
-| `,` or `g` | Pick up item |
+| `f` + direction | Fire projectile (arrows, daggers, wands) |
+| `z` | Spell menu (pick spell → pick direction) |
+| `t` | Techniques menu (class combat abilities) |
+| `C` | Class ability (Battle Cry / Arcane Blast / Shadow Step) |
+| `i` | Inventory (use, equip, drop items) |
+| `,` | Pick up item / Grab wall torch |
+| `e` | Interact (alchemy table, pedestal, fountain) |
 | `>` / `<` | Descend / Ascend stairs |
-| `$` | Browse shop (when adjacent) |
+| `$` | Browse shop |
 | `p` | Pray at shrine |
-| `s` | Search for traps |
-| `d` | Disarm visible trap |
+| `/` | Search for traps & secrets |
+| `D` | Disarm visible trap |
 | `o` | Auto-explore |
-| `Tab` | Auto-fight |
-| `T` | Toggle torch |
+| `Tab` | Auto-fight (attack nearest enemy) |
+| `R` | Rest until healed |
+| `.` or `5` | Wait (skip one turn, heal if not starving) |
+| `T` | Toggle torch on/off |
+| `J` | Journal (identified items log) |
 | `M` | Bestiary (Monster Memory) |
-| `j` | Journal |
-| `.` or `5` | Rest (skip turn) |
-| `?` | Help |
+| `c` | Character sheet |
+| `S` | Lifetime stats |
+| `x` | Examine/look mode |
+| `m` | Message log |
+| `Q` | Save & Quit |
+| `?` | Help (2-page in-game reference) |
 
 ### Agent Mode Controls
 | Key | Action |
@@ -228,7 +239,7 @@ Agent mode calls Claude Haiku (~$0.005-0.01 per game). A typical game uses 100-2
 ## Testing
 
 ```bash
-# Unit tests (385 tests)
+# Unit tests (474 tests)
 python3 -m pytest tests/
 
 # Built-in tests (dungeon connectivity, enemy spawning, item generation)
@@ -239,6 +250,17 @@ python3 src/depths_of_dread/game.py --bot --games 10
 
 # Agent batch (requires Claude CLI)
 python3 src/depths_of_dread/game.py --agent --games 6
+
+# Difficulty modes
+python3 src/depths_of_dread/game.py --difficulty easy    # Relaxed
+python3 src/depths_of_dread/game.py --difficulty hard    # Punishing
+
+# Quick start a specific class
+python3 src/depths_of_dread/game.py --class warrior
+
+# Challenge modes
+python3 src/depths_of_dread/game.py --ironman   # Permadeath, no save
+python3 src/depths_of_dread/game.py --dark      # Reduced FOV
 ```
 
 ---

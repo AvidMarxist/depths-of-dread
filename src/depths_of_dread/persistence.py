@@ -232,6 +232,14 @@ def save_game(gs):
             "damage_taken": p.damage_taken, "foods_eaten": p.foods_eaten,
             "bosses_killed": p.bosses_killed, "spells_cast": p.spells_cast,
             "projectiles_fired": p.projectiles_fired,
+            "gold_earned": p.gold_earned, "gold_spent": p.gold_spent,
+            "torches_grabbed": p.torches_grabbed,
+            "traps_triggered": p.traps_triggered, "traps_found": p.traps_found,
+            "traps_disarmed": p.traps_disarmed,
+            "fountains_used": getattr(p, 'fountains_used', 0),
+            "secrets_found": getattr(p, 'secrets_found', 0),
+            "kills_by_type": getattr(p, 'kills_by_type', {}),
+            "items_by_type": getattr(p, 'items_by_type', {}),
             "player_class": p.player_class,
             "pending_levelups": p.pending_levelups,
             "ability_cooldown": p.ability_cooldown,
@@ -350,6 +358,17 @@ def load_game():
         p.known_abilities = set(pd.get("known_abilities", []))
         p.bleed_stacks = pd.get("bleed_stacks", 0)
         p.bleed_turns = pd.get("bleed_turns", 0)
+        # Telemetry counters (v3 — older saves get 0)
+        p.gold_earned = pd.get("gold_earned", 0)
+        p.gold_spent = pd.get("gold_spent", 0)
+        p.torches_grabbed = pd.get("torches_grabbed", 0)
+        p.traps_triggered = pd.get("traps_triggered", 0)
+        p.traps_found = pd.get("traps_found", 0)
+        p.traps_disarmed = pd.get("traps_disarmed", 0)
+        p.fountains_used = pd.get("fountains_used", 0)
+        p.secrets_found = pd.get("secrets_found", 0)
+        p.kills_by_type = pd.get("kills_by_type", {})
+        p.items_by_type = pd.get("items_by_type", {})
         p.status_effects = pd.get("status_effects", {})
         # Restore inventory
         p.inventory = [_deserialize_item(d) for d in pd.get("inventory", [])]

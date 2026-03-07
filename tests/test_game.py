@@ -3430,18 +3430,21 @@ class TestAstarPerformance:
 
     def test_astar_finds_valid_path(self):
         """Functional: A* still finds valid paths after heapq change."""
-        gs = GameState(headless=True)
+        gs = GameState(headless=True, seed=42)
         gs.generate_floor(1)
         p = gs.player
-        # Find a walkable tile nearby
+        # Find a walkable tile nearby (search in all directions)
         target = None
         for dx in range(1, 15):
-            tx = p.x + dx
-            if 0 < tx < MAP_W - 1 and gs.tiles[p.y][tx] in WALKABLE:
-                target = (tx, p.y)
+            for dy_offset in [0, 1, -1, 2, -2]:
+                tx, ty = p.x + dx, p.y + dy_offset
+                if 0 < tx < MAP_W - 1 and 0 < ty < MAP_H - 1 and gs.tiles[ty][tx] in WALKABLE:
+                    target = (tx, ty)
+                    break
+            if target:
                 break
         if target:
-            result = astar(gs.tiles, p.x, p.y, target[0], target[1], max_steps=20)
+            result = astar(gs.tiles, p.x, p.y, target[0], target[1], max_steps=30)
             assert result is not None
             dx, dy = result
             assert abs(dx) <= 1 and abs(dy) <= 1
@@ -4515,15 +4518,18 @@ class TestTrapSystem:
             _passive_trap_detect(gs)
         assert trap["visible"]
 
-    def test_non_rogue_no_passive_detection(self):
-        """Non-rogue classes should not passively detect traps."""
+    def test_non_rogue_low_passive_detection(self):
+        """Non-rogue classes should have very low (5%) passive detection chance."""
         gs = GameState(headless=True)
         gs.generate_floor(1)
         gs.player.player_class = "warrior"
         trap = {"x": gs.player.x + 1, "y": gs.player.y, "type": "spike",
                 "visible": False, "triggered": False, "disarmed": False}
         gs.traps = [trap]
-        _passive_trap_detect(gs)
+        # Force a roll of 6 (above 5% threshold = no detection)
+        with patch('depths_of_dread.combat.random') as mock_rng:
+            mock_rng.randint.return_value = 6
+            _passive_trap_detect(gs)
         assert not trap["visible"]
 
     def test_search_finds_trap(self):

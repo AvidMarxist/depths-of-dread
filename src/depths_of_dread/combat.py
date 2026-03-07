@@ -87,6 +87,7 @@ def _award_kill(gs, enemy, msg=None, drops=False):
         return True
     p.xp += enemy.xp
     p.kills += 1
+    p.kills_by_type[enemy.etype] = p.kills_by_type.get(enemy.etype, 0) + 1
     _bestiary_record(gs, enemy.etype, "kill")
     if enemy.boss:
         p.bosses_killed += 1
@@ -134,6 +135,7 @@ def _trigger_trap(gs, trap, target_name="You", target_hp_ref=None, is_player=Tru
 
     if is_player:
         p = gs.player
+        p.traps_triggered += 1
         if dmg > 0:
             p.hp -= dmg
             p.damage_taken += dmg
@@ -192,42 +194,56 @@ def _check_traps_on_move(gs, nx, ny):
 
 
 def _passive_trap_detect(gs):
-    """Rogue passive trap detection when moving adjacent to hidden traps."""
+    """Passive trap detection when moving adjacent to hidden traps.
+    Rogues have a strong bonus; other classes have a small chance."""
     p = gs.player
-    if p.player_class != "rogue":
-        return
     for trap in gs.traps:
         if trap["visible"] or trap["disarmed"] or trap["triggered"]:
             continue
         if abs(trap["x"] - p.x) <= B["trap_detect_radius"] and abs(trap["y"] - p.y) <= B["trap_detect_radius"]:
-            if random.randint(1, 100) <= B["trap_rogue_detect_bonus"]:
+            chance = B["trap_rogue_detect_bonus"] if p.player_class == "rogue" else 5
+            if random.randint(1, 100) <= chance:
                 trap["visible"] = True
                 tdata = TRAP_TYPES[trap["type"]]
+                p.traps_found += 1
                 gs.msg(f"You sense a {tdata['name']} nearby!", C_YELLOW)
 
 
 def _search_for_traps(gs):
-    """Active search: check 8 adjacent tiles for hidden traps ('s' key)."""
+    """Active search: check 2-tile radius for hidden traps and secret walls ('/' key)."""
     p = gs.player
     found = 0
-    for ddx in range(-1, 2):
-        for ddy in range(-1, 2):
+    for ddx in range(-2, 3):
+        for ddy in range(-2, 3):
             if ddx == 0 and ddy == 0:
                 continue
             tx, ty = p.x + ddx, p.y + ddy
+            if tx < 0 or tx >= MAP_W or ty < 0 or ty >= MAP_H:
+                continue
             for trap in gs.traps:
                 if trap["x"] == tx and trap["y"] == ty and not trap["visible"] and not trap["disarmed"]:
                     tdata = TRAP_TYPES[trap["type"]]
-                    # Roll vs detect_dc
                     roll = p.level + random.randint(1, 20)
                     if p.player_class == "rogue":
                         roll += 5
                     if roll >= tdata["detect_dc"]:
                         trap["visible"] = True
+                        p.traps_found += 1
                         gs.msg(f"Found a {tdata['name']}!", C_YELLOW)
                         found += 1
+            # Check for secret walls (added with secret rooms feature)
+            if 0 <= tx < MAP_W and 0 <= ty < MAP_H:
+                if gs.tiles[ty][tx] == T_SECRET_WALL:
+                    roll = p.level + random.randint(1, 20)
+                    if p.player_class == "rogue":
+                        roll += 5
+                    if roll >= 15:  # DC 15 to find secret passage
+                        gs.tiles[ty][tx] = T_DOOR
+                        p.secrets_found += 1
+                        gs.msg("You discover a hidden passage!", C_YELLOW)
+                        found += 1
     if found == 0:
-        gs.msg("You search but find nothing.", C_DARK)
+        gs.msg("You search carefully but find nothing.", C_DARK)
 
 
 def _disarm_trap(gs):
@@ -247,6 +263,7 @@ def _disarm_trap(gs):
                         chance += p.level * B["trap_disarm_dex_scale"]
                     if random.randint(1, 100) <= chance:
                         trap["disarmed"] = True
+                        gs.player.traps_disarmed += 1
                         gs.msg(f"You disarm the {tdata['name']}!", C_GREEN)
                     else:
                         gs.msg(f"Disarm failed! The {tdata['name']} triggers!", C_RED)
