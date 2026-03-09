@@ -1,28 +1,34 @@
+from __future__ import annotations
+
 import random
 import curses
+from typing import Any, TYPE_CHECKING
 from .constants import *
+
+if TYPE_CHECKING:
+    from .game import GameState
 
 
 class Item:
     __slots__ = ['x', 'y', 'item_type', 'subtype', 'data', 'identified', 'equipped', 'count']
-    def __init__(self, x, y, item_type, subtype, data):
-        self.x = x
-        self.y = y
-        self.item_type = item_type
-        self.subtype = subtype
-        self.data = dict(data)
-        self.identified = False
-        self.equipped = False
-        self.count = 1
+    def __init__(self, x: int, y: int, item_type: str, subtype: str | int, data: dict[str, Any]) -> None:
+        self.x: int = x
+        self.y: int = y
+        self.item_type: str = item_type
+        self.subtype: str | int = subtype
+        self.data: dict[str, Any] = dict(data)
+        self.identified: bool = False
+        self.equipped: bool = False
+        self.count: int = 1
 
     @property
-    def char(self):
+    def char(self) -> str:
         if self.item_type == "gold":
             return '$'
         return self.data.get("char", '?')
 
     @property
-    def color(self):
+    def color(self) -> int:
         return {"weapon": C_WHITE, "armor": C_BLUE, "potion": C_MAGENTA,
                 "scroll": C_YELLOW, "gold": C_GOLD, "food": C_GREEN,
                 "ring": C_CYAN, "bow": C_YELLOW, "arrow": C_WHITE,
@@ -30,7 +36,7 @@ class Item:
                 "torch": C_YELLOW}.get(self.item_type, C_WHITE)
 
     @property
-    def display_name(self):
+    def display_name(self) -> str:
         if self.item_type == "gold":
             return f"{self.data['amount']} gold"
         if self.item_type == "potion":
@@ -53,7 +59,7 @@ class Item:
         return self.data.get("name", "???")
 
     @property
-    def sell_value(self):
+    def sell_value(self) -> int:
         """Gold value when selling to a shop (roughly 50% of buy price)."""
         if self.item_type == "gold":
             return 0
@@ -84,84 +90,84 @@ class Item:
 
 
 class Enemy:
-    def __init__(self, x, y, etype):
+    def __init__(self, x: int, y: int, etype: str) -> None:
         t = ENEMY_TYPES[etype]
-        self.x = x
-        self.y = y
-        self.etype = etype
-        self.name = t["name"]
-        self.char = t["char"]
-        self.color = t["color"]
-        self.max_hp = t["hp"]
-        self.hp = t["hp"]
-        self.dmg = t["dmg"]
-        self.defense = t["defense"]
-        self.xp = t["xp"]
-        self.speed = t["speed"]
-        self.ai = t["ai"]
-        self.boss = t.get("boss", False)
-        self.regen = t.get("regen", 0)
-        self.lifesteal = t.get("lifesteal", False)
-        self.energy = 0.0
-        self.alerted = False
-        self.alertness = "unwary"  # "asleep", "unwary", or "alert"
-        self.patrol_dir = random.choice([(0,1),(0,-1),(1,0),(-1,0)])
-        self.summon_cooldown = 0
-        self.frozen_turns = 0
+        self.x: int = x
+        self.y: int = y
+        self.etype: str = etype
+        self.name: str = t["name"]
+        self.char: str = t["char"]
+        self.color: int = t["color"]
+        self.max_hp: int = t["hp"]
+        self.hp: int = t["hp"]
+        self.dmg: int = t["dmg"]
+        self.defense: int = t["defense"]
+        self.xp: int = t["xp"]
+        self.speed: float = t["speed"]
+        self.ai: str = t["ai"]
+        self.boss: bool = t.get("boss", False)
+        self.regen: int = t.get("regen", 0)
+        self.lifesteal: bool = t.get("lifesteal", False)
+        self.energy: float = 0.0
+        self.alerted: bool = False
+        self.alertness: str = "unwary"  # "asleep", "unwary", or "alert"
+        self.patrol_dir: tuple[int, int] = random.choice([(0,1),(0,-1),(1,0),(-1,0)])
+        self.summon_cooldown: int = 0
+        self.frozen_turns: int = 0
         # D&D expansion fields
-        self.poison_chance = t.get("poison_chance", 0)
-        self.fear_chance = t.get("fear_chance", 0)
-        self.paralyze_chance = t.get("paralyze_chance", 0)
-        self.fire_aura = t.get("fire_aura", False)
-        self.disguised = t.get("disguised", False)
-        self.phase_cooldown = 0
-        self.phase_cooldown_max = t.get("phase_cooldown_max", 3)
-        self.psychic_range = t.get("psychic_range", 0)
-        self.bleed_chance = t.get("bleed_chance", 0)
-        self.freeze_status_chance = t.get("freeze_status_chance", 0)
-        self.silence_chance = t.get("silence_chance", 0)
-        self.poisoned_turns = 0  # Poison from player's Poison Blade ability
+        self.poison_chance: int = t.get("poison_chance", 0)
+        self.fear_chance: int = t.get("fear_chance", 0)
+        self.paralyze_chance: int = t.get("paralyze_chance", 0)
+        self.fire_aura: bool = t.get("fire_aura", False)
+        self.disguised: bool = t.get("disguised", False)
+        self.phase_cooldown: int = 0
+        self.phase_cooldown_max: int = t.get("phase_cooldown_max", 3)
+        self.psychic_range: int = t.get("psychic_range", 0)
+        self.bleed_chance: int = t.get("bleed_chance", 0)
+        self.freeze_status_chance: int = t.get("freeze_status_chance", 0)
+        self.silence_chance: int = t.get("silence_chance", 0)
+        self.poisoned_turns: int = 0  # Poison from player's Poison Blade ability
         # Fleeing system
-        self.fleeing = False
-        self.flee_threshold = t.get("flee_threshold", 0.0)
+        self.fleeing: bool = False
+        self.flee_threshold: float = t.get("flee_threshold", 0.0)
         # Elemental resistance system
-        self.damage_type = t.get("damage_type", "physical")
-        self.resists = t.get("resists", [])
-        self.vulnerable = t.get("vulnerable", [])
-        self.regen_suppressed = 0  # Turns of regen suppression (e.g. fire vs troll)
+        self.damage_type: str = t.get("damage_type", "physical")
+        self.resists: list[str] = t.get("resists", [])
+        self.vulnerable: list[str] = t.get("vulnerable", [])
+        self.regen_suppressed: int = 0  # Turns of regen suppression (e.g. fire vs troll)
         # Apex enemy fields
-        self.apex = t.get("apex", False)
-        self.breath_weapon = t.get("breath_weapon", None)
-        self.breath_range = t.get("breath_range", 0)
-        self.breath_cooldown_max = t.get("breath_cooldown_max", 0)
-        self.breath_cooldown = 0
-        self.multi_attack = t.get("multi_attack", 1)
-        self.stun_on_hit = t.get("stun_on_hit", 0)
+        self.apex: bool = t.get("apex", False)
+        self.breath_weapon: str | None = t.get("breath_weapon", None)
+        self.breath_range: int = t.get("breath_range", 0)
+        self.breath_cooldown_max: int = t.get("breath_cooldown_max", 0)
+        self.breath_cooldown: int = 0
+        self.multi_attack: int = t.get("multi_attack", 1)
+        self.stun_on_hit: int = t.get("stun_on_hit", 0)
         # Boss phase tracking
-        self.boss_phase = 1
-        self.boss_phase_turn = 0  # Turns since last phase action (e.g., bat summon)
+        self.boss_phase: int = 1
+        self.boss_phase_turn: int = 0  # Turns since last phase action (e.g., bat summon)
         # Expansion status effects on enemies
-        self.bleed_stacks = 0
-        self.bleed_turns = 0
-        self.silenced_turns = 0
+        self.bleed_stacks: int = 0
+        self.bleed_turns: int = 0
+        self.silenced_turns: int = 0
 
-    def is_alive(self):
+    def is_alive(self) -> bool:
         return self.hp > 0
 
 
 class Player:
-    def __init__(self, player_class=None):
-        self.x = 0
-        self.y = 0
-        self.player_class = player_class  # None = classless adventurer (backward compat)
+    def __init__(self, player_class: str | None = None) -> None:
+        self.x: int = 0
+        self.y: int = 0
+        self.player_class: str | None = player_class  # None = classless adventurer (backward compat)
         if player_class and player_class in CHARACTER_CLASSES:
             cc = CHARACTER_CLASSES[player_class]
-            self.hp = cc["hp"]
-            self.max_hp = cc["hp"]
-            self.mana = cc["mp"]
-            self.max_mana = cc["mp"]
-            self.strength = cc["str"]
-            self.defense = cc["defense"]
+            self.hp: int = cc["hp"]
+            self.max_hp: int = cc["hp"]
+            self.mana: int = cc["mp"]
+            self.max_mana: int = cc["mp"]
+            self.strength: int = cc["str"]
+            self.defense: int = cc["defense"]
         else:
             self.hp = 30
             self.max_hp = 30
@@ -169,62 +175,62 @@ class Player:
             self.max_mana = 20
             self.strength = 5
             self.defense = 1
-        self.level = 1
-        self.xp = 0
-        self.xp_next = BALANCE["xp_base"]
-        self.floor = 1
-        self.gold = 0
-        self.turns = 0
-        self.kills = 0
-        self.inventory = []
-        self.weapon = None
-        self.armor = None
-        self.ring = None
-        self.bow = None
-        self.hunger = 100.0
-        self.torch_fuel = TORCH_MAX_FUEL
-        self.torch_lit = True  # Can toggle torch on/off to conserve fuel
-        self.status_effects = {}
-        self.frozen_enemies = {}  # enemy id -> turns remaining
-        self.deepest_floor = 1
-        self.potions_drunk = 0
-        self.scrolls_read = 0
-        self.items_found = 0
-        self.damage_dealt = 0
-        self.damage_taken = 0
-        self.foods_eaten = 0
-        self.bosses_killed = 0
-        self.spells_cast = 0
-        self.projectiles_fired = 0
-        self.pending_levelups = []  # Deferred level-up choices
-        self.ability_cooldown = 0   # Class ability cooldown
+        self.level: int = 1
+        self.xp: int = 0
+        self.xp_next: int = BALANCE["xp_base"]
+        self.floor: int = 1
+        self.gold: int = 0
+        self.turns: int = 0
+        self.kills: int = 0
+        self.inventory: list[Item] = []
+        self.weapon: Item | None = None
+        self.armor: Item | None = None
+        self.ring: Item | None = None
+        self.bow: Item | None = None
+        self.hunger: float = 100.0
+        self.torch_fuel: int = TORCH_MAX_FUEL
+        self.torch_lit: bool = True  # Can toggle torch on/off to conserve fuel
+        self.status_effects: dict[str, int] = {}
+        self.frozen_enemies: dict[int, int] = {}  # enemy id -> turns remaining
+        self.deepest_floor: int = 1
+        self.potions_drunk: int = 0
+        self.scrolls_read: int = 0
+        self.items_found: int = 0
+        self.damage_dealt: int = 0
+        self.damage_taken: int = 0
+        self.foods_eaten: int = 0
+        self.bosses_killed: int = 0
+        self.spells_cast: int = 0
+        self.projectiles_fired: int = 0
+        self.pending_levelups: list[dict[str, Any]] = []  # Deferred level-up choices
+        self.ability_cooldown: int = 0   # Class ability cooldown
         # Telemetry counters
-        self.gold_earned = 0
-        self.gold_spent = 0
-        self.torches_grabbed = 0
-        self.traps_triggered = 0
-        self.traps_found = 0
-        self.traps_disarmed = 0
-        self.fountains_used = 0
-        self.secrets_found = 0
-        self.kills_by_type = {}     # {enemy_type: count}
-        self.items_by_type = {}     # {item_type: count}
+        self.gold_earned: int = 0
+        self.gold_spent: int = 0
+        self.torches_grabbed: int = 0
+        self.traps_triggered: int = 0
+        self.traps_found: int = 0
+        self.traps_disarmed: int = 0
+        self.fountains_used: int = 0
+        self.secrets_found: int = 0
+        self.kills_by_type: dict[str, int] = {}     # {enemy_type: count}
+        self.items_by_type: dict[str, int] = {}     # {item_type: count}
         # Known spells — class-specific starting sets
         if player_class and player_class in CLASS_KNOWN_SPELLS:
-            self.known_spells = set(CLASS_KNOWN_SPELLS[player_class])
+            self.known_spells: set[str] = set(CLASS_KNOWN_SPELLS[player_class])
         else:
             self.known_spells = set(BASE_SPELLS)  # classless = all base spells
-        self.known_abilities = set()  # Warrior/Rogue combat techniques (unlocked via Cleave/Lethality)
+        self.known_abilities: set[str] = set()  # Warrior/Rogue combat techniques (unlocked via Cleave/Lethality)
         # Expansion status effects
-        self.bleed_stacks = 0
-        self.bleed_turns = 0
+        self.bleed_stacks: int = 0
+        self.bleed_turns: int = 0
 
     @property
-    def carry_capacity(self):
+    def carry_capacity(self) -> int:
         """Inventory capacity scales with strength."""
         return 15 + self.strength
 
-    def attack_damage(self):
+    def attack_damage(self) -> int:
         s = self.strength
         if "Berserk" in self.status_effects:
             s = int(s * 1.5)
@@ -238,7 +244,7 @@ class Player:
             return random.randint(lo, hi) + b + s // 3
         return random.randint(1, 3) + s // 3
 
-    def total_defense(self):
+    def total_defense(self) -> int:
         d = self.defense
         if self.armor:
             d += self.armor.data["defense"]
@@ -248,7 +254,7 @@ class Player:
             d += 3
         return d
 
-    def evasion_chance(self):
+    def evasion_chance(self) -> float:
         base = B["evasion_base"]
         if "Speed" in self.status_effects:
             base += B["evasion_speed_bonus"]
@@ -264,16 +270,16 @@ class Player:
             base += B["smoke_bomb_evasion_bonus"]
         return min(base, B["evasion_cap"])
 
-    def player_resists(self):
+    def player_resists(self) -> set[str]:
         """Return set of elements player currently resists."""
-        r = set()
+        r: set[str] = set()
         if self.ring and "resists" in self.ring.data:
             r.update(self.ring.data["resists"])
         if self.armor and "resists" in self.armor.data:
             r.update(self.armor.data["resists"])
         return r
 
-    def get_torch_radius(self):
+    def get_torch_radius(self) -> int:
         if not self.torch_lit or self.torch_fuel <= 0:
             return TORCH_RADIUS_EMPTY
         pct = self.torch_fuel / TORCH_MAX_FUEL
@@ -284,10 +290,10 @@ class Player:
         else:
             return TORCH_RADIUS_QUARTER
 
-    def check_level_up(self):
+    def check_level_up(self) -> list[tuple[int, int, int, int]]:
         """Returns list of (level, hp_gain, str_gain, mp_gain) tuples.
         If pending_levelups system is active, defers stat application."""
-        ups = []
+        ups: list[tuple[int, int, int, int]] = []
         while self.xp >= self.xp_next:
             self.xp -= self.xp_next
             self.level += 1
@@ -314,7 +320,7 @@ class Player:
         return ups
 
 
-def generate_levelup_choices(player):
+def generate_levelup_choices(player: Player) -> list[dict[str, Any]]:
     """Generate 3 random level-up options for the player to choose from."""
     pool = list(LEVELUP_CHOICES)
     if player.player_class and player.player_class in CLASS_LEVELUP_CHOICES:
@@ -323,7 +329,7 @@ def generate_levelup_choices(player):
     return pool[:3]
 
 
-def apply_levelup_choice(player, levelup_data, choice):
+def apply_levelup_choice(player: Player, levelup_data: dict[str, Any], choice: dict[str, Any]) -> str | None:
     """Apply base level-up gains plus the chosen bonus."""
     # Base gains from the level-up
     player.max_hp += levelup_data["base_hp"]
@@ -346,7 +352,7 @@ def apply_levelup_choice(player, levelup_data, choice):
     player._evasion_bonus += choice.get("evasion", 0)
     # Arcana unlocks the next spell in the class unlock order
     # Cleave/Lethality unlocks the next class ability
-    learned = None
+    learned: str | None = None
     if choice["name"] == "Arcana":
         learned = _unlock_next_spell(player)
     elif choice["name"] in ("Cleave", "Lethality"):
@@ -354,7 +360,7 @@ def apply_levelup_choice(player, levelup_data, choice):
     return learned
 
 
-def _unlock_next_spell(player):
+def _unlock_next_spell(player: Player) -> str | None:
     """Unlock the next spell in the class-specific unlock order. Returns spell name or None."""
     unlock_list = SPELL_UNLOCK_ORDER.get(player.player_class, [])
     for spell_name in unlock_list:
@@ -364,7 +370,7 @@ def _unlock_next_spell(player):
     return None  # All already known — just the MP bonus
 
 
-def _unlock_next_ability(player):
+def _unlock_next_ability(player: Player) -> str | None:
     """Unlock the next ability in the class-specific unlock order. Returns ability name or None."""
     unlock_list = ABILITY_UNLOCK_ORDER.get(player.player_class, [])
     for ability_name in unlock_list:
@@ -374,10 +380,10 @@ def _unlock_next_ability(player):
     return None
 
 
-def show_levelup_choice(scr, gs):
+def show_levelup_choice(scr: Any, gs: GameState) -> int | None:
     """Show level-up choice screen for one pending levelup. Returns chosen index."""
     if not gs.player.pending_levelups:
-        return
+        return None
     levelup_data = gs.player.pending_levelups[0]
     choices = generate_levelup_choices(gs.player)
 
@@ -425,7 +431,7 @@ def show_levelup_choice(scr, gs):
     return idx
 
 
-def auto_apply_levelup(player):
+def auto_apply_levelup(player: Player) -> None:
     """Auto-apply the best level-up choice (for bot/agent). Picks highest HP option."""
     if not player.pending_levelups:
         return
@@ -438,7 +444,7 @@ def auto_apply_levelup(player):
 
 
 class ShopItem:
-    def __init__(self, item, price):
-        self.item = item
-        self.price = price
-        self.sold = False
+    def __init__(self, item: Item, price: int) -> None:
+        self.item: Item = item
+        self.price: int = price
+        self.sold: bool = False

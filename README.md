@@ -270,16 +270,26 @@ python3 src/depths_of_dread/game.py --dark      # Reduced FOV
 ```
 depths-of-dread/
   src/depths_of_dread/
-    game.py          # The entire game (~9,000 lines)
+    game.py          # Game loop, GameState, command dispatch (~990 lines)
+    constants.py     # All balance tuning, enemy/item/spell definitions (~900 lines)
+    bot.py           # BotPlayer decision tree + AgentPlayer Claude integration (~2,400 lines)
+    items.py         # Item usage, spells, player actions (~1,660 lines)
+    ui.py            # Rendering, inventory, character sheet, menus (~1,580 lines)
+    combat.py        # Combat resolution, enemy AI, status effects (~1,070 lines)
+    persistence.py   # Save/load, session recording, replay (~760 lines)
+    floor_gen.py     # Floor generation, enemy/item/feature population (~680 lines)
+    entities.py      # Player, Enemy, Item, ShopItem classes (~450 lines)
+    mapgen.py        # BSP dungeon generation, FOV, A* pathfinding (~430 lines)
     __init__.py      # Version info
     __main__.py      # python -m entry point
   tests/
-    test_game.py     # 385 tests
+    test_game.py     # 474 tests across all ISO 25010 quality dimensions
+  docs/              # Design docs, audit reports, research
   pyproject.toml     # Package config
   LICENSE            # MIT
 ```
 
-Yes, it's a single 9,000-line file. It uses only Python's standard library. No frameworks, no engines, no dependencies. Just Python and a terminal.
+~10,900 lines of source across 10 modules. Zero external dependencies — just Python's standard library and a terminal.
 
 ---
 

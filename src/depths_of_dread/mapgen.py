@@ -1,3 +1,5 @@
+from __future__ import annotations
+
 import random
 import heapq
 from .constants import *
@@ -8,13 +10,13 @@ from .constants import *
 # ============================================================
 
 class BSPNode:
-    def __init__(self, x, y, w, h):
+    def __init__(self, x: int, y: int, w: int, h: int) -> None:
         self.x, self.y, self.w, self.h = x, y, w, h
-        self.left = None
-        self.right = None
-        self.room = None
+        self.left: BSPNode | None = None
+        self.right: BSPNode | None = None
+        self.room: tuple[int, int, int, int] | None = None
 
-    def split(self, min_size=8, max_depth=5, depth=0):
+    def split(self, min_size: int = 8, max_depth: int = 5, depth: int = 0) -> None:
         if depth >= max_depth:
             return
         if self.w < min_size * 2 and self.h < min_size * 2:
@@ -40,7 +42,7 @@ class BSPNode:
         self.left.split(min_size, max_depth, depth + 1)
         self.right.split(min_size, max_depth, depth + 1)
 
-    def get_rooms(self):
+    def get_rooms(self) -> list[tuple[int, int, int, int]]:
         if self.room:
             return [self.room]
         rooms = []
@@ -50,7 +52,7 @@ class BSPNode:
             rooms.extend(self.right.get_rooms())
         return rooms
 
-    def create_rooms(self, tiles, min_room=4, padding=1):
+    def create_rooms(self, tiles: list[list[int]], min_room: int = 4, padding: int = 1) -> None:
         if self.left is None and self.right is None:
             rw = random.randint(min_room, max(min_room, self.w - padding * 2))
             rh = random.randint(min_room, max(min_room, self.h - padding * 2))
@@ -83,7 +85,7 @@ class BSPNode:
                                r2[0]+r2[2]//2, r2[1]+r2[3]//2)
 
 
-def _carve_room_shape(tiles, rx, ry, rw, rh, shape):
+def _carve_room_shape(tiles: list[list[int]], rx: int, ry: int, rw: int, rh: int, shape: str) -> None:
     """Carve a room of the given shape into the tile grid."""
     if shape == "rect":
         for yy in range(ry, ry + rh):
@@ -130,7 +132,7 @@ def _carve_room_shape(tiles, rx, ry, rw, rh, shape):
                     tiles[yy][xx] = T_FLOOR
 
 
-def _carve_corridor(tiles, x1, y1, x2, y2):
+def _carve_corridor(tiles: list[list[int]], x1: int, y1: int, x2: int, y2: int) -> None:
     x, y = x1, y1
     if random.random() < 0.5:
         while x != x2:
@@ -154,7 +156,7 @@ def _carve_corridor(tiles, x1, y1, x2, y2):
         tiles[y2][x2] = T_CORRIDOR
 
 
-def flood_fill_count(tiles, sx, sy):
+def flood_fill_count(tiles: list[list[int]], sx: int, sy: int) -> int:
     visited = set()
     stack = [(sx, sy)]
     while stack:
@@ -171,7 +173,7 @@ def flood_fill_count(tiles, sx, sy):
     return len(visited)
 
 
-def count_walkable(tiles):
+def count_walkable(tiles: list[list[int]]) -> int:
     c = 0
     for row in tiles:
         for t in row:
@@ -180,7 +182,7 @@ def count_walkable(tiles):
     return c
 
 
-def generate_dungeon(floor_num, retries=20):
+def generate_dungeon(floor_num: int, retries: int = 20) -> tuple[list[list[int]], list[tuple[int, int, int, int]], tuple[int, int], tuple[int, int]]:
     for attempt in range(retries):
         tiles = [[T_WALL]*MAP_W for _ in range(MAP_H)]
         root = BSPNode(0, 0, MAP_W, MAP_H)
@@ -247,7 +249,7 @@ def generate_dungeon(floor_num, retries=20):
     return _generate_fallback(floor_num)
 
 
-def _add_cave_features(tiles, floor_num):
+def _add_cave_features(tiles: list[list[int]], floor_num: int) -> None:
     for _ in range(min(floor_num - 3, 4)):
         for _ in range(50):
             cx = random.randint(3, MAP_W-4)
@@ -278,7 +280,7 @@ def _add_cave_features(tiles, floor_num):
                                 tiles[ny][nx] = tile_t
 
 
-def _generate_fallback(floor_num):
+def _generate_fallback(floor_num: int) -> tuple[list[list[int]], list[tuple[int, int, int, int]], tuple[int, int], tuple[int, int]]:
     tiles = [[T_WALL]*MAP_W for _ in range(MAP_H)]
     rooms = []
     for gy in range(3):
@@ -311,21 +313,21 @@ def _generate_fallback(floor_num):
 # FOV (Recursive Shadowcasting)
 # ============================================================
 
-_MULT = [
+_MULT: list[list[int]] = [
     [1,  0,  0, -1, -1,  0,  0,  1],
     [0,  1, -1,  0,  0, -1,  1,  0],
     [0,  1,  1,  0,  0, -1, -1,  0],
     [1,  0,  0,  1, -1,  0,  0, -1],
 ]
 
-def compute_fov(tiles, px, py, radius, visible_set):
+def compute_fov(tiles: list[list[int]], px: int, py: int, radius: int, visible_set: set[tuple[int, int]]) -> None:
     """Compute field of view using recursive shadowcasting for 8 octants."""
     visible_set.clear()
     visible_set.add((px, py))
     for octant in range(8):
         _cast_light(tiles, px, py, radius, 1, 1.0, 0.0, octant, visible_set)
 
-def _cast_light(tiles, cx, cy, radius, row, start, end, octant, visible):
+def _cast_light(tiles: list[list[int]], cx: int, cy: int, radius: int, row: int, start: float, end: float, octant: int, visible: set[tuple[int, int]]) -> None:
     if start < end:
         return
     radius_sq = radius * radius
@@ -367,7 +369,7 @@ def _cast_light(tiles, cx, cy, radius, row, start, end, octant, visible):
 # PATHFINDING
 # ============================================================
 
-def astar(tiles, sx, sy, gx, gy, max_steps=20):
+def astar(tiles: list[list[int]], sx: int, sy: int, gx: int, gy: int, max_steps: int = 20) -> tuple[int, int] | None:
     """A* pathfinding from (sx,sy) to (gx,gy). Returns (dx,dy) for first step or None."""
     if sx == gx and sy == gy:
         return (0, 0)
@@ -407,7 +409,7 @@ def astar(tiles, sx, sy, gx, gy, max_steps=20):
     return None
 
 
-def _has_los(tiles, x1, y1, x2, y2):
+def _has_los(tiles: list[list[int]], x1: int, y1: int, x2: int, y2: int) -> bool:
     dx = abs(x2 - x1)
     dy = abs(y2 - y1)
     sx = 1 if x2 > x1 else -1

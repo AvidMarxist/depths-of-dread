@@ -1,11 +1,18 @@
+from __future__ import annotations
+
 import random
 import curses
+from typing import Any, TYPE_CHECKING
+
 from .constants import *
 from .entities import Item, Enemy, Player
 from .mapgen import astar, _has_los, compute_fov
 
+if TYPE_CHECKING:
+    from .game import GameState
 
-def sound_alert(gs, event):
+
+def sound_alert(gs: GameState, event: str) -> None:
     """Play terminal bell/flash for key events. Sparse — only critical moments."""
     if gs._headless:
         return
@@ -33,7 +40,7 @@ def sound_alert(gs, event):
 # COMBAT & ITEMS
 # ============================================================
 
-def _bestiary_record(gs, etype, event, value=0):
+def _bestiary_record(gs: GameState, etype: str, event: str, value: int | str = 0) -> None:
     """Record a bestiary event for an enemy type.
 
     Args:
@@ -62,7 +69,7 @@ def _bestiary_record(gs, etype, event, value=0):
             entry["abilities"].append(value)
 
 
-def _award_kill(gs, enemy, msg=None, drops=False):
+def _award_kill(gs: GameState, enemy: Enemy, msg: str | bool | None = None, drops: bool = False) -> bool:
     """Centralized kill accounting. Call when enemy dies.
 
     Handles: XP award, kill count, boss tracking, damage stats cleanup.
@@ -117,14 +124,14 @@ def _award_kill(gs, enemy, msg=None, drops=False):
     return True
 
 
-def _check_levelups(gs):
+def _check_levelups(gs: GameState) -> None:
     """Check and announce any pending level-ups after XP gain."""
     p = gs.player
     for lvl, hp_g, str_g, mp_g in p.check_level_up():
         gs.msg(f"*** LEVEL UP! Level {lvl}! +{hp_g} HP, +{str_g} STR, +{mp_g} MP ***", C_YELLOW)
         sound_alert(gs, "level_up")
 
-def _trigger_trap(gs, trap, target_name="You", target_hp_ref=None, is_player=True):
+def _trigger_trap(gs: GameState, trap: dict[str, Any], target_name: str = "You", target_hp_ref: list[int] | None = None, is_player: bool = True) -> int:
     """Trigger a trap on a target (player or enemy). Returns damage dealt."""
     tdata = TRAP_TYPES[trap["type"]]
     trap["triggered"] = True
@@ -182,7 +189,7 @@ def _trigger_trap(gs, trap, target_name="You", target_hp_ref=None, is_player=Tru
     return dmg
 
 
-def _check_traps_on_move(gs, nx, ny):
+def _check_traps_on_move(gs: GameState, nx: int, ny: int) -> bool:
     """Check if player steps on a trap at (nx, ny). Returns True if trap triggered."""
     for trap in gs.traps:
         if trap["x"] == nx and trap["y"] == ny and not trap["disarmed"] and not trap["triggered"]:
@@ -193,7 +200,7 @@ def _check_traps_on_move(gs, nx, ny):
     return False
 
 
-def _passive_trap_detect(gs):
+def _passive_trap_detect(gs: GameState) -> None:
     """Passive trap detection when moving adjacent to hidden traps.
     Rogues have a strong bonus; other classes have a small chance."""
     p = gs.player
@@ -209,7 +216,7 @@ def _passive_trap_detect(gs):
                 gs.msg(f"You sense a {tdata['name']} nearby!", C_YELLOW)
 
 
-def _search_for_traps(gs):
+def _search_for_traps(gs: GameState) -> None:
     """Active search: check 2-tile radius for hidden traps and secret walls ('/' key)."""
     p = gs.player
     found = 0
@@ -246,7 +253,7 @@ def _search_for_traps(gs):
         gs.msg("You search carefully but find nothing.", C_DARK)
 
 
-def _disarm_trap(gs):
+def _disarm_trap(gs: GameState) -> bool:
     """Disarm an adjacent visible trap ('d' key). Returns True if turn spent."""
     p = gs.player
     # Find nearest adjacent visible trap
@@ -273,7 +280,7 @@ def _disarm_trap(gs):
     return False
 
 
-def player_attack(gs, enemy):
+def player_attack(gs: GameState, enemy: Enemy) -> None:
     p = gs.player
     # First melee attack tip (Phase 3, item 14)
     if not gs.first_melee_done:
@@ -394,7 +401,7 @@ def player_attack(gs, enemy):
     enemy.alerted = True
 
 
-def enemy_attack(gs, enemy):
+def enemy_attack(gs: GameState, enemy: Enemy) -> None:
     p = gs.player
     if random.randint(1, 100) <= p.evasion_chance():
         gs.msg(f"You dodge the {enemy.name}'s attack!", C_CYAN)
@@ -488,7 +495,7 @@ def enemy_attack(gs, enemy):
         sound_alert(gs, "death")
 
 
-def _compute_noise(gs, noise_type="walk"):
+def _compute_noise(gs: GameState, noise_type: str = "walk") -> int:
     """Compute noise level at player position based on action type.
 
     Returns integer noise level after applying class reduction.
@@ -516,7 +523,7 @@ def _compute_noise(gs, noise_type="walk"):
     return max(0, noise)
 
 
-def _stealth_detection(gs, noise_level):
+def _stealth_detection(gs: GameState, noise_level: int) -> None:
     """Run perception checks for non-alert enemies based on noise.
 
     For each sleeping/unwary enemy, check if noise at their position
@@ -546,7 +553,7 @@ def _stealth_detection(gs, noise_level):
                 if (e.x, e.y) in gs.visible:
                     gs.msg(f"The {e.name} is alerted!", C_YELLOW)
 
-def process_enemies(gs):
+def process_enemies(gs: GameState) -> None:
     p = gs.player
     for e in gs.enemies:
         if not e.is_alive():
@@ -694,7 +701,7 @@ def process_enemies(gs):
     gs.enemies = [e for e in gs.enemies if e.is_alive()]
 
 
-def _update_boss_phase(gs, e):
+def _update_boss_phase(gs: GameState, e: Enemy) -> None:
     """Update boss phase based on HP thresholds. Triggers phase transition effects."""
     hp_pct = e.hp / e.max_hp if e.max_hp > 0 else 1.0
     p = gs.player
@@ -829,7 +836,7 @@ def _update_boss_phase(gs, e):
             _bestiary_record(gs, e.etype, "ability", "enrage")
 
 
-def _try_enemy_move(gs, e, dx, dy):
+def _try_enemy_move(gs: GameState, e: Enemy, dx: int, dy: int) -> None:
     nx, ny = e.x + dx, e.y + dy
     if nx < 0 or nx >= MAP_W or ny < 0 or ny >= MAP_H:
         return
@@ -853,7 +860,7 @@ def _try_enemy_move(gs, e, dx, dy):
             break
 
 
-def _flee_move(gs, e):
+def _flee_move(gs: GameState, e: Enemy) -> None:
     """Move enemy away from player. If cornered, stop fleeing and fight."""
     p = gs.player
     # Primary flee direction: away from player
@@ -880,7 +887,7 @@ def _flee_move(gs, e):
         enemy_attack(gs, e)
 
 
-def _chase_move(gs, e):
+def _chase_move(gs: GameState, e: Enemy) -> None:
     p = gs.player
     step = astar(gs.tiles, e.x, e.y, p.x, p.y)
     if step:
@@ -894,7 +901,7 @@ def _chase_move(gs, e):
             _try_enemy_move(gs, e, 0, dy)
 
 
-def _erratic_move(gs, e):
+def _erratic_move(gs: GameState, e: Enemy) -> None:
     if random.random() < 0.5:
         _chase_move(gs, e)
     else:
@@ -902,7 +909,7 @@ def _erratic_move(gs, e):
         _try_enemy_move(gs, e, dx, dy)
 
 
-def _patrol_move(gs, e):
+def _patrol_move(gs: GameState, e: Enemy) -> None:
     dx, dy = e.patrol_dir
     nx, ny = e.x + dx, e.y + dy
     if nx < 0 or nx >= MAP_W or ny < 0 or ny >= MAP_H or gs.tiles[ny][nx] == T_WALL:
@@ -911,7 +918,7 @@ def _patrol_move(gs, e):
         _try_enemy_move(gs, e, dx, dy)
 
 
-def _pack_move(gs, e):
+def _pack_move(gs: GameState, e: Enemy) -> None:
     pack_nearby = sum(1 for o in gs.enemies if o is not e and o.ai == "pack"
                       and abs(o.x-e.x)+abs(o.y-e.y) <= 5 and o.is_alive())
     p = gs.player
@@ -927,13 +934,13 @@ def _pack_move(gs, e):
         _try_enemy_move(gs, e, dx, dy)
 
 
-def _ambush_move(gs, e):
+def _ambush_move(gs: GameState, e: Enemy) -> None:
     dist = abs(e.x - gs.player.x) + abs(e.y - gs.player.y)
     if dist <= 3:
         _chase_move(gs, e)
 
 
-def _ranged_move(gs, e):
+def _ranged_move(gs: GameState, e: Enemy) -> None:
     p = gs.player
     dist = abs(e.x - p.x) + abs(e.y - p.y)
     if dist <= 1:
@@ -958,7 +965,7 @@ def _ranged_move(gs, e):
         _chase_move(gs, e)
 
 
-def _summoner_move(gs, e):
+def _summoner_move(gs: GameState, e: Enemy) -> None:
     p = gs.player
     dist = abs(e.x - p.x) + abs(e.y - p.y)
     if dist <= 1:
@@ -984,7 +991,7 @@ def _summoner_move(gs, e):
         _chase_move(gs, e)
 
 
-def _mimic_move(gs, e):
+def _mimic_move(gs: GameState, e: Enemy) -> None:
     """Mimic AI: stays disguised as gold until player is adjacent, then reveals and attacks."""
     p = gs.player
     dist = abs(e.x - p.x) + abs(e.y - p.y)
@@ -1004,7 +1011,7 @@ def _mimic_move(gs, e):
         _chase_move(gs, e)
 
 
-def _phase_move(gs, e):
+def _phase_move(gs: GameState, e: Enemy) -> None:
     """Phase Spider AI: teleports every N turns, then chases. Poison on hit handled by enemy_attack."""
     p = gs.player
     dist = abs(e.x - p.x) + abs(e.y - p.y)
@@ -1034,7 +1041,7 @@ def _phase_move(gs, e):
         _chase_move(gs, e)
 
 
-def _mind_flayer_move(gs, e):
+def _mind_flayer_move(gs: GameState, e: Enemy) -> None:
     """Mind Flayer AI: psychic attack through walls at range, paralyze on hit."""
     p = gs.player
     dist = abs(e.x - p.x) + abs(e.y - p.y)
