@@ -35,6 +35,8 @@ if TYPE_CHECKING:
     from .entities import Item, Player, ShopItem
     from .persistence import SessionRecorder
 
+from .exceptions import RecordingError
+
 # --- Constants (data layer — wildcard import is intentional) ---
 from .constants import *  # noqa: F403 — constants are the shared data layer
 from .constants import _CHALLENGE_MODES, _DIR_MAP
@@ -107,10 +109,15 @@ from .persistence import (
 
 # --- Bot / Agent ---
 from .bot import (
-    BotPlayer, FeatureTracker, AgentPlayer,
-    bot_game_loop, agent_game_loop, bot_batch_mode, agent_batch_mode,
+    BotPlayer,
+    bot_game_loop, bot_batch_mode,
     _bot_execute_action, _update_explored_from_fov,
 )
+from .agent import (
+    AgentPlayer,
+    agent_game_loop, agent_batch_mode,
+)
+from .agent_ui import FeatureTracker
 
 
 # ============================================================
@@ -374,7 +381,7 @@ def _init_new_game(gs: GameState) -> None:
     try:
         gs.recorder = SessionRecorder(gs.seed)
         gs.recorder.record_floor_change(gs)
-    except Exception:
+    except (OSError, RecordingError):
         gs.recorder = None
     gs.msg("You descend into the darkness beneath Thornhaven...", C_YELLOW)
     gs.msg("Press ? for help.", C_DARK)

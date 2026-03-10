@@ -16,6 +16,7 @@ from typing import Any, TYPE_CHECKING
 
 from .constants import *
 from .entities import Item, Enemy, Player
+from .exceptions import SaveError, LoadError, RecordingError
 
 if TYPE_CHECKING:
     from .game import GameState
@@ -305,7 +306,7 @@ def save_game(gs: GameState) -> bool:
         with open(SAVE_FILE_PATH, 'w') as f:
             json.dump(wrapper, f)
         return True
-    except Exception:
+    except (OSError, ValueError, TypeError):
         return False
 
 
@@ -622,7 +623,7 @@ def list_recordings() -> None:
             floor = last.get("floor", "?")
             score = last.get("score", "?")
             print(f"{i+1:<4} {date:<20} {seed:<12} {result:<10} {floor:<6} {score:<8} {f.name}")
-        except Exception:
+        except (OSError, json.JSONDecodeError, KeyError):
             print(f"{i+1:<4} {'error reading':<20} {f.name}")
 
 

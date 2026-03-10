@@ -672,6 +672,249 @@ def _apply_spell_resist(gs: GameState, enemy: Enemy, dmg: int, element: str) -> 
     return dmg
 
 
+def _spell_fireball(gs: GameState, scr: Any, spell_info: dict[str, Any], direction: tuple[int, int] | None, target_enemy: Enemy | None) -> bool:
+    """Handle Fireball spell: 3x3 AoE fire damage in a chosen direction."""
+    p = gs.player
+    if direction is None and scr:
+        gs.msg("Fireball direction? (wasd/arrows/hjkl)", C_YELLOW)
+        _get_render_game()(scr, gs)
+        key = scr.getch()
+        direction = _get_direction_delta(key)
+    if direction is None:
+        gs.msg("Cancelled.", C_WHITE)
+        return False
+    dx, dy = direction
+    cx = p.x + dx * 3
+    cy = p.y + dy * 3
+    path = []
+    for i in range(1, 4):
+        path.append((p.x + dx*i, p.y + dy*i))
+    _animate_projectile(gs, path, '*', C_RED)
+    _animate_blast(gs, cx, cy, 1, '*', C_RED)
+    kills = 0
+    total_dmg = 0
+    for ey in range(cy-1, cy+2):
+        for ex in range(cx-1, cx+2):
+            for e in gs.enemies:
+                if e.x == ex and e.y == ey and e.is_alive():
+                    dmg = random.randint(B["fireball_min"], B["fireball_max"]) + p.level * B["fireball_level_scale"]
+                    dmg = _apply_spell_resist(gs, e, dmg, "fire")
+                    e.hp -= dmg
+                    total_dmg += dmg
+                    p.damage_dealt += dmg
+                    if not e.is_alive():
+                        kills += _award_kill(gs, e, msg=False)
+    gs.enemies = [e for e in gs.enemies if e.is_alive()]
+    gs.msg(f"FIREBALL! {kills} killed, {total_dmg} total damage!", C_RED)
+    _check_levelups(gs)
+    return True
+
+
+def _spell_lightning_bolt(gs: GameState, scr: Any, spell_info: dict[str, Any], direction: tuple[int, int] | None, target_enemy: Enemy | None) -> bool:
+    """Handle Lightning Bolt spell: line damage with water AoE."""
+    p = gs.player
+    if direction is None and scr:
+        gs.msg("Lightning direction? (wasd/arrows/hjkl)", C_YELLOW)
+        _get_render_game()(scr, gs)
+        key = scr.getch()
+        direction = _get_direction_delta(key)
+    if direction is None:
+        gs.msg("Cancelled.", C_WHITE)
+        return False
+    dx, dy = direction
+    x, y = p.x, p.y
+    path = []
+    hits = 0
+    total_dmg = 0
+    for _ in range(12):
+        x += dx
+        y += dy
+        if x < 0 or x >= MAP_W or y < 0 or y >= MAP_H:
+            break
+        if gs.tiles[y][x] == T_WALL:
+            break
+        path.append((x, y))
+        for e in gs.enemies:
+            if e.x == x and e.y == y and e.is_alive():
+                dmg = random.randint(B["lightning_min"], B["lightning_max"]) + p.level * B["lightning_level_scale"]
+                dmg = _apply_spell_resist(gs, e, dmg, "lightning")
+                e.hp -= dmg
+                total_dmg += dmg
+                p.damage_dealt += dmg
+                hits += 1
+                if not e.is_alive():
+                    _award_kill(gs, e, msg=False)
+    _animate_projectile(gs, path, '#', C_CYAN)
+    for px2, py2 in path:
+        if 0 <= px2 < MAP_W and 0 <= py2 < MAP_H and gs.tiles[py2][px2] == T_WATER:
+            gs.msg("Lightning arcs through the water!", C_YELLOW)
+            for e in gs.enemies:
+                if (e.is_alive() and gs.tiles[e.y][e.x] == T_WATER
+                        and abs(e.x - px2) + abs(e.y - py2) <= 3):
+                    water_dmg = random.randint(5, 15)
+                    water_dmg = _apply_spell_resist(gs, e, water_dmg, "lightning")
+                    e.hp -= water_dmg
+                    total_dmg += water_dmg
+                    p.damage_dealt += water_dmg
+                    if not e.is_alive():
+                        hits += 1
+                        _award_kill(gs, e, msg=False)
+            break  # Only trigger water AoE once
+    gs.enemies = [e for e in gs.enemies if e.is_alive()]
+    gs.msg(f"LIGHTNING! Hit {hits} enemies for {total_dmg} damage!", C_CYAN)
+    _check_levelups(gs)
+    return True
+
+
+def _spell_heal(gs: GameState, scr: Any, spell_info: dict[str, Any], direction: tuple[int, int] | None, target_enemy: Enemy | None) -> bool:
+    """Handle Heal spell: restore HP."""
+    p = gs.player
+    heal_amt = random.randint(B["heal_spell_min"], B["heal_spell_max"]) + p.level * B["heal_spell_level_scale"]
+    p.hp = min(p.max_hp, p.hp + heal_amt)
+    gs.msg(f"Healing light! (+{heal_amt} HP)", C_GREEN)
+    return True
+
+
+def _spell_teleport(gs: GameState, scr: Any, spell_info: dict[str, Any], direction: tuple[int, int] | None, target_enemy: Enemy | None) -> bool:
+    """Handle Teleport spell: blink to a random position."""
+    p = gs.player
+    pos = gs._find_spawn_pos()
+    if pos:
+        p.x, p.y = pos
+        gs.msg("You blink across the dungeon!", C_MAGENTA)
+    else:
+        gs.msg("The spell fizzles.", C_DARK)
+    return True
+
+
+def _spell_freeze(gs: GameState, scr: Any, spell_info: dict[str, Any], direction: tuple[int, int] | None, target_enemy: Enemy | None) -> bool:
+    """Handle Freeze spell: freeze nearest visible enemy."""
+    p = gs.player
+    nearest = target_enemy
+    if nearest is None:
+        nd = 999
+        for e in gs.enemies:
+            if e.is_alive() and (e.x, e.y) in gs.visible:
+                d = abs(e.x - p.x) + abs(e.y - p.y)
+                if d < nd:
+                    nd = d
+                    nearest = e
+    if nearest and nearest.is_alive():
+        nearest.frozen_turns = B["freeze_duration"]
+        gs.msg(f"The {nearest.name} is frozen solid!", C_CYAN)
+        return True
+    else:
+        gs.msg("No target in sight.", C_DARK)
+        return False
+
+
+def _spell_chain_lightning(gs: GameState, scr: Any, spell_info: dict[str, Any], direction: tuple[int, int] | None, target_enemy: Enemy | None) -> bool:
+    """Handle Chain Lightning spell: hit primary target then chain to nearby enemies."""
+    p = gs.player
+    nearest = target_enemy
+    if nearest is None:
+        nd = 999
+        for e in gs.enemies:
+            if e.is_alive() and (e.x, e.y) in gs.visible:
+                d = abs(e.x - p.x) + abs(e.y - p.y)
+                if d < nd:
+                    nd = d
+                    nearest = e
+    if nearest is None or not nearest.is_alive():
+        gs.msg("No target in sight.", C_DARK)
+        return False
+    base_dmg = random.randint(B["chain_lightning_min"], B["chain_lightning_max"]) + p.level
+    base_dmg = _apply_spell_resist(gs, nearest, base_dmg, "lightning")
+    nearest.hp -= base_dmg
+    p.damage_dealt += base_dmg
+    total_dmg = base_dmg
+    kills = 0
+    chain_targets = [nearest]
+    if not nearest.is_alive():
+        kills += _award_kill(gs, nearest, msg=False)
+    current_dmg = base_dmg
+    last_hit = nearest
+    for _ in range(2):
+        current_dmg = int(current_dmg * B["chain_lightning_decay"])
+        if current_dmg < 1:
+            break
+        best = None
+        best_dist = 999
+        for e in gs.enemies:
+            if e.is_alive() and e not in chain_targets:
+                d = abs(e.x - last_hit.x) + abs(e.y - last_hit.y)
+                if d <= B["chain_lightning_chain_range"] and d < best_dist:
+                    best_dist = d
+                    best = e
+        if best is None:
+            break
+        best.hp -= current_dmg
+        p.damage_dealt += current_dmg
+        total_dmg += current_dmg
+        chain_targets.append(best)
+        if not best.is_alive():
+            kills += _award_kill(gs, best, msg=False)
+        last_hit = best
+    gs.enemies = [e for e in gs.enemies if e.is_alive()]
+    gs.msg(f"CHAIN LIGHTNING! {len(chain_targets)} hit, {total_dmg} damage, {kills} killed!", C_CYAN)
+    _check_levelups(gs)
+    return True
+
+
+def _spell_meteor(gs: GameState, scr: Any, spell_info: dict[str, Any], direction: tuple[int, int] | None, target_enemy: Enemy | None) -> bool:
+    """Handle Meteor spell: 5x5 AoE fire damage in a chosen direction."""
+    p = gs.player
+    if direction is None and scr:
+        gs.msg("Meteor direction? (wasd/arrows/hjkl)", C_YELLOW)
+        _get_render_game()(scr, gs)
+        key = scr.getch()
+        direction = _get_direction_delta(key)
+    if direction is None:
+        gs.msg("Cancelled.", C_WHITE)
+        return False
+    dx, dy = direction
+    cx = p.x + dx * B["meteor_range"]
+    cy = p.y + dy * B["meteor_range"]
+    _animate_blast(gs, cx, cy, 2, '#', C_RED)
+    kills = 0
+    total_dmg = 0
+    for ey in range(cy - 2, cy + 3):
+        for ex in range(cx - 2, cx + 3):
+            for e in gs.enemies:
+                if e.x == ex and e.y == ey and e.is_alive():
+                    dmg = random.randint(B["meteor_min"], B["meteor_max"]) + p.level * B["meteor_level_scale"]
+                    dmg = _apply_spell_resist(gs, e, dmg, "fire")
+                    e.hp -= dmg
+                    total_dmg += dmg
+                    p.damage_dealt += dmg
+                    if not e.is_alive():
+                        kills += _award_kill(gs, e, msg=False)
+    gs.enemies = [e for e in gs.enemies if e.is_alive()]
+    gs.msg(f"METEOR! {kills} killed, {total_dmg} total damage!", C_RED)
+    _check_levelups(gs)
+    return True
+
+
+def _spell_mana_shield(gs: GameState, scr: Any, spell_info: dict[str, Any], direction: tuple[int, int] | None, target_enemy: Enemy | None) -> bool:
+    """Handle Mana Shield spell: apply protective status effect."""
+    p = gs.player
+    p.status_effects["Mana Shield"] = B["mana_shield_duration"]
+    gs.msg("A shimmering mana shield surrounds you!", C_CYAN)
+    return True
+
+
+SPELL_HANDLERS: dict[str, Callable[..., bool]] = {
+    "Fireball": _spell_fireball,
+    "Lightning Bolt": _spell_lightning_bolt,
+    "Heal": _spell_heal,
+    "Teleport": _spell_teleport,
+    "Freeze": _spell_freeze,
+    "Chain Lightning": _spell_chain_lightning,
+    "Meteor": _spell_meteor,
+    "Mana Shield": _spell_mana_shield,
+}
+
+
 def _cast_spell(gs: GameState, scr: Any, spell_name: str, spell_info: dict[str, Any], direction: tuple[int, int] | None = None, target_enemy: Enemy | None = None) -> bool:
     """Execute the spell effect."""
     p = gs.player
@@ -680,235 +923,17 @@ def _cast_spell(gs: GameState, scr: Any, spell_name: str, spell_info: dict[str, 
     gs.last_noise = max(gs.last_noise, _compute_noise(gs, "spell"))
     p.spells_cast += 1
 
-    if spell_name == "Fireball":
-        if direction is None and scr:
-            gs.msg("Fireball direction? (wasd/arrows/hjkl)", C_YELLOW)
-            _get_render_game()(scr, gs)
-            key = scr.getch()
-            direction = _get_direction_delta(key)
-        if direction is None:
-            p.mana += spell_info["cost"]  # refund
-            p.spells_cast -= 1
-            gs.msg("Cancelled.", C_WHITE)
-            return False
-        dx, dy = direction
-        # Center of blast is 3 tiles away in that direction
-        cx = p.x + dx * 3
-        cy = p.y + dy * 3
-        # Animate path
-        path = []
-        for i in range(1, 4):
-            path.append((p.x + dx*i, p.y + dy*i))
-        _animate_projectile(gs, path, '*', C_RED)
-        _animate_blast(gs, cx, cy, 1, '*', C_RED)
-        # 3x3 AoE
-        kills = 0
-        total_dmg = 0
-        for ey in range(cy-1, cy+2):
-            for ex in range(cx-1, cx+2):
-                for e in gs.enemies:
-                    if e.x == ex and e.y == ey and e.is_alive():
-                        dmg = random.randint(B["fireball_min"], B["fireball_max"]) + p.level * B["fireball_level_scale"]
-                        dmg = _apply_spell_resist(gs, e, dmg, "fire")
-                        e.hp -= dmg
-                        total_dmg += dmg
-                        p.damage_dealt += dmg
-                        if not e.is_alive():
-                            kills += _award_kill(gs, e, msg=False)
-        gs.enemies = [e for e in gs.enemies if e.is_alive()]
-        gs.msg(f"FIREBALL! {kills} killed, {total_dmg} total damage!", C_RED)
-        _check_levelups(gs)
-        return True
+    handler = SPELL_HANDLERS.get(spell_name)
+    if handler is None:
+        p.mana += spell_info["cost"]
+        p.spells_cast -= 1
+        return False
 
-    elif spell_name == "Lightning Bolt":
-        if direction is None and scr:
-            gs.msg("Lightning direction? (wasd/arrows/hjkl)", C_YELLOW)
-            _get_render_game()(scr, gs)
-            key = scr.getch()
-            direction = _get_direction_delta(key)
-        if direction is None:
-            p.mana += spell_info["cost"]
-            p.spells_cast -= 1
-            gs.msg("Cancelled.", C_WHITE)
-            return False
-        dx, dy = direction
-        # Hits ALL enemies in the line
-        x, y = p.x, p.y
-        path = []
-        hits = 0
-        total_dmg = 0
-        for _ in range(12):
-            x += dx
-            y += dy
-            if x < 0 or x >= MAP_W or y < 0 or y >= MAP_H:
-                break
-            if gs.tiles[y][x] == T_WALL:
-                break
-            path.append((x, y))
-            for e in gs.enemies:
-                if e.x == x and e.y == y and e.is_alive():
-                    dmg = random.randint(B["lightning_min"], B["lightning_max"]) + p.level * B["lightning_level_scale"]
-                    dmg = _apply_spell_resist(gs, e, dmg, "lightning")
-                    e.hp -= dmg
-                    total_dmg += dmg
-                    p.damage_dealt += dmg
-                    hits += 1
-                    if not e.is_alive():
-                        _award_kill(gs, e, msg=False)
-        _animate_projectile(gs, path, '#', C_CYAN)
-        # Lightning + Water AoE: if bolt hits a water tile, damage entities on nearby water
-        for px2, py2 in path:
-            if 0 <= px2 < MAP_W and 0 <= py2 < MAP_H and gs.tiles[py2][px2] == T_WATER:
-                gs.msg("Lightning arcs through the water!", C_YELLOW)
-                for e in gs.enemies:
-                    if (e.is_alive() and gs.tiles[e.y][e.x] == T_WATER
-                            and abs(e.x - px2) + abs(e.y - py2) <= 3):
-                        water_dmg = random.randint(5, 15)
-                        water_dmg = _apply_spell_resist(gs, e, water_dmg, "lightning")
-                        e.hp -= water_dmg
-                        total_dmg += water_dmg
-                        p.damage_dealt += water_dmg
-                        if not e.is_alive():
-                            hits += 1
-                            _award_kill(gs, e, msg=False)
-                break  # Only trigger water AoE once
-        gs.enemies = [e for e in gs.enemies if e.is_alive()]
-        gs.msg(f"LIGHTNING! Hit {hits} enemies for {total_dmg} damage!", C_CYAN)
-        _check_levelups(gs)
-        return True
-
-    elif spell_name == "Heal":
-        heal_amt = random.randint(B["heal_spell_min"], B["heal_spell_max"]) + p.level * B["heal_spell_level_scale"]
-        p.hp = min(p.max_hp, p.hp + heal_amt)
-        gs.msg(f"Healing light! (+{heal_amt} HP)", C_GREEN)
-        return True
-
-    elif spell_name == "Teleport":
-        pos = gs._find_spawn_pos()
-        if pos:
-            p.x, p.y = pos
-            gs.msg("You blink across the dungeon!", C_MAGENTA)
-        else:
-            gs.msg("The spell fizzles.", C_DARK)
-        return True
-
-    elif spell_name == "Freeze":
-        # Find nearest enemy in FOV
-        nearest = target_enemy
-        if nearest is None:
-            nd = 999
-            for e in gs.enemies:
-                if e.is_alive() and (e.x, e.y) in gs.visible:
-                    d = abs(e.x - p.x) + abs(e.y - p.y)
-                    if d < nd:
-                        nd = d
-                        nearest = e
-        if nearest and nearest.is_alive():
-            nearest.frozen_turns = B["freeze_duration"]
-            gs.msg(f"The {nearest.name} is frozen solid!", C_CYAN)
-            return True
-        else:
-            gs.msg("No target in sight.", C_DARK)
-            p.mana += spell_info["cost"]
-            p.spells_cast -= 1
-            return False
-
-    elif spell_name == "Chain Lightning":
-        # Find nearest visible enemy
-        nearest = target_enemy
-        if nearest is None:
-            nd = 999
-            for e in gs.enemies:
-                if e.is_alive() and (e.x, e.y) in gs.visible:
-                    d = abs(e.x - p.x) + abs(e.y - p.y)
-                    if d < nd:
-                        nd = d
-                        nearest = e
-        if nearest is None or not nearest.is_alive():
-            gs.msg("No target in sight.", C_DARK)
-            p.mana += spell_info["cost"]
-            p.spells_cast -= 1
-            return False
-        # Hit primary target
-        base_dmg = random.randint(B["chain_lightning_min"], B["chain_lightning_max"]) + p.level
-        base_dmg = _apply_spell_resist(gs, nearest, base_dmg, "lightning")
-        nearest.hp -= base_dmg
-        p.damage_dealt += base_dmg
-        total_dmg = base_dmg
-        kills = 0
-        chain_targets = [nearest]
-        if not nearest.is_alive():
-            kills += _award_kill(gs, nearest, msg=False)
-        # Chain to up to 2 more enemies within range of each hit
-        current_dmg = base_dmg
-        last_hit = nearest
-        for _ in range(2):
-            current_dmg = int(current_dmg * B["chain_lightning_decay"])
-            if current_dmg < 1:
-                break
-            best = None
-            best_dist = 999
-            for e in gs.enemies:
-                if e.is_alive() and e not in chain_targets:
-                    d = abs(e.x - last_hit.x) + abs(e.y - last_hit.y)
-                    if d <= B["chain_lightning_chain_range"] and d < best_dist:
-                        best_dist = d
-                        best = e
-            if best is None:
-                break
-            best.hp -= current_dmg
-            p.damage_dealt += current_dmg
-            total_dmg += current_dmg
-            chain_targets.append(best)
-            if not best.is_alive():
-                kills += _award_kill(gs, best, msg=False)
-            last_hit = best
-        gs.enemies = [e for e in gs.enemies if e.is_alive()]
-        gs.msg(f"CHAIN LIGHTNING! {len(chain_targets)} hit, {total_dmg} damage, {kills} killed!", C_CYAN)
-        _check_levelups(gs)
-        return True
-
-    elif spell_name == "Meteor":
-        if direction is None and scr:
-            gs.msg("Meteor direction? (wasd/arrows/hjkl)", C_YELLOW)
-            _get_render_game()(scr, gs)
-            key = scr.getch()
-            direction = _get_direction_delta(key)
-        if direction is None:
-            p.mana += spell_info["cost"]
-            p.spells_cast -= 1
-            gs.msg("Cancelled.", C_WHITE)
-            return False
-        dx, dy = direction
-        # Blast center is meteor_range tiles in that direction
-        cx = p.x + dx * B["meteor_range"]
-        cy = p.y + dy * B["meteor_range"]
-        _animate_blast(gs, cx, cy, 2, '#', C_RED)
-        # 5x5 AoE
-        kills = 0
-        total_dmg = 0
-        for ey in range(cy - 2, cy + 3):
-            for ex in range(cx - 2, cx + 3):
-                for e in gs.enemies:
-                    if e.x == ex and e.y == ey and e.is_alive():
-                        dmg = random.randint(B["meteor_min"], B["meteor_max"]) + p.level * B["meteor_level_scale"]
-                        dmg = _apply_spell_resist(gs, e, dmg, "fire")
-                        e.hp -= dmg
-                        total_dmg += dmg
-                        p.damage_dealt += dmg
-                        if not e.is_alive():
-                            kills += _award_kill(gs, e, msg=False)
-        gs.enemies = [e for e in gs.enemies if e.is_alive()]
-        gs.msg(f"METEOR! {kills} killed, {total_dmg} total damage!", C_RED)
-        _check_levelups(gs)
-        return True
-
-    elif spell_name == "Mana Shield":
-        p.status_effects["Mana Shield"] = B["mana_shield_duration"]
-        gs.msg("A shimmering mana shield surrounds you!", C_CYAN)
-        return True
-
-    return False
+    result = handler(gs, scr, spell_info, direction, target_enemy)
+    if not result:
+        p.mana += spell_info["cost"]
+        p.spells_cast -= 1
+    return result
 
 
 # ============================================================
