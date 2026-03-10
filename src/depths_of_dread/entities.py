@@ -1,8 +1,9 @@
 from __future__ import annotations
 
-import random
 import curses
-from typing import Any, TYPE_CHECKING
+import random
+from typing import TYPE_CHECKING, Any
+
 from .constants import *
 
 if TYPE_CHECKING:

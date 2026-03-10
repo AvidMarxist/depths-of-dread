@@ -42,3 +42,76 @@ where = ["src"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
+
+[tool.ruff]
+target-version = "py310"
+line-length = 120
+src = ["src"]
+
+[tool.ruff.lint]
+select = [
+    "E",    # pycodestyle errors
+    "W",    # pycodestyle warnings
+    "F",    # pyflakes
+    "I",    # isort
+    "B",    # flake8-bugbear
+    "UP",   # pyupgrade
+]
+ignore = [
+    "E501",   # line too long (we have our own limit)
+    "E701",   # multiple statements on one line (colon) — one-liner style
+    "E402",   # module import not at top of file (sys.path manipulation)
+    "F403",   # wildcard imports (constants.py pattern)
+    "F405",   # may be undefined from wildcard import
+    "F841",   # unused variable (often intentional)
+    "E741",   # ambiguous variable name (l, O, I)
+    "B007",   # unused loop variable
+    "B009",   # do not call getattr with constant attribute
+    "B010",   # do not call setattr with constant attribute
+]
+
+[tool.ruff.lint.per-file-ignores]
+"src/depths_of_dread/constants.py" = ["E501"]  # long constant lines are fine
+"src/depths_of_dread/game.py" = ["F401"]       # wildcard imports + explicit re-imports
+"src/depths_of_dread/agent.py" = ["F401"]      # wildcard imports + explicit re-imports
+"src/depths_of_dread/bot.py" = ["F401"]        # wildcard imports + explicit re-imports
+"src/depths_of_dread/agent_ui.py" = ["F401"]   # wildcard imports + explicit re-imports
+"tests/*" = ["F401", "F811"]  # unused imports and redefined names in tests
+
+[tool.mypy]
+python_version = "3.10"
+warn_return_any = false        # too noisy with wildcard imports returning Any
+warn_unused_configs = true
+check_untyped_defs = false     # start lenient, tighten later
+disallow_untyped_defs = false  # start lenient, tighten later
+ignore_missing_imports = true
+exclude = ["tests/"]
+
+# Silence errors from complex init patterns (None -> real type)
+# and wildcard-import-heavy modules. Tighten per-module as code improves.
+[[tool.mypy.overrides]]
+module = [
+    "depths_of_dread.game",
+    "depths_of_dread.floor_gen",
+    "depths_of_dread.agent",
+    "depths_of_dread.bot",
+    "depths_of_dread.agent_ui",
+    "depths_of_dread.combat",
+    "depths_of_dread.items",
+    "depths_of_dread.ui",
+    "depths_of_dread.persistence",
+    "depths_of_dread.mapgen",
+    "depths_of_dread.entities",
+]
+disable_error_code = [
+    "assignment",          # None-init vars reassigned later
+    "index",               # indexing None-typed vars (init pattern)
+    "arg-type",            # loose types from wildcard imports
+    "attr-defined",        # dynamic attributes
+    "func-returns-value",  # functions returning None used in expressions
+    "var-annotated",       # unannotated container inits
+    "union-attr",          # accessing attrs on Optional without narrowing
+    "misc",                # catch-all for minor issues
+    "has-type",            # cannot determine type
+    "call-arg",            # missing/extra args (often from wildcard re-exports)
+]

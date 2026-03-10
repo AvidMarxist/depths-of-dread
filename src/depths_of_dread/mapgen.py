@@ -1,9 +1,9 @@
 from __future__ import annotations
 
-import random
 import heapq
-from .constants import *
+import random
 
+from .constants import *
 
 # ============================================================
 # DUNGEON GENERATION (BSP)

@@ -5,18 +5,16 @@ Handles lifetime stats, save/load, session recording, and session replay.
 
 from __future__ import annotations
 
-import json
-import hashlib
-import os
-import datetime
-import time
 import curses
+import datetime
+import hashlib
+import json
+import os
 from pathlib import Path
-from typing import Any, TYPE_CHECKING
+from typing import TYPE_CHECKING, Any
 
 from .constants import *
-from .entities import Item, Enemy, Player
-from .exceptions import SaveError, LoadError, RecordingError
+from .entities import Enemy, Item
 
 if TYPE_CHECKING:
     from .game import GameState
@@ -100,7 +98,7 @@ def apply_meta_unlocks(gs: GameState) -> None:
 def load_lifetime_stats() -> dict[str, Any]:
     """Load lifetime stats from disk. Returns defaults if missing/corrupt."""
     try:
-        with open(STATS_FILE_PATH, 'r') as f:
+        with open(STATS_FILE_PATH) as f:
             data = json.load(f)
         # Validate it's a dict with expected keys; fill missing keys with defaults
         if not isinstance(data, dict):
@@ -312,10 +310,10 @@ def save_game(gs: GameState) -> bool:
 
 def load_game() -> GameState | None:
     """Load game state from JSON file. Returns GameState or None."""
-    from .game import GameState
     from .entities import ShopItem
+    from .game import GameState
     try:
-        with open(SAVE_FILE_PATH, 'r') as f:
+        with open(SAVE_FILE_PATH) as f:
             wrapper = json.load(f)
     except (FileNotFoundError, json.JSONDecodeError):
         return None
@@ -611,7 +609,7 @@ def list_recordings() -> None:
     print("-" * 85)
     for i, f in enumerate(files[:20]):
         try:
-            with open(f, 'r') as fh:
+            with open(f) as fh:
                 first = json.loads(fh.readline())
                 # Read last line for result
                 fh.seek(0)
@@ -633,15 +631,15 @@ def list_recordings() -> None:
 
 def replay_session(scr: Any, filepath: str, speed: float = 1.0) -> None:
     """Replay a recorded session visually in the terminal."""
-    from .game import GameState, _init_new_game, _choose_branch_headless
-    from .ui import safe_addstr, init_colors, render_game, compute_fov
-    from .combat import player_move, process_enemies, process_status, _stealth_detection
+    from .combat import _stealth_detection, player_move, process_enemies, process_status
+    from .game import GameState, _choose_branch_headless, _init_new_game
+    from .ui import compute_fov, init_colors, render_game, safe_addstr
     curses.curs_set(0)
     scr.nodelay(False)
     scr.keypad(True)
     init_colors()
 
-    with open(filepath, 'r') as f:
+    with open(filepath) as f:
         lines = f.readlines()
     if not lines:
         return

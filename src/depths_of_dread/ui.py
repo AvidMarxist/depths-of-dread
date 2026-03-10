@@ -12,12 +12,12 @@ import random
 import time
 import types
 from collections import deque
-from typing import Any, TYPE_CHECKING
+from typing import TYPE_CHECKING, Any
 
+from .combat import player_attack, process_enemies
 from .constants import *
 from .entities import Item, Player
-from .mapgen import compute_fov, astar, _has_los
-from .combat import process_enemies, player_attack
+from .mapgen import _has_los, astar, compute_fov
 
 if TYPE_CHECKING:
     from .game import GameState
@@ -1049,9 +1049,9 @@ def show_messages(scr: Any, gs: GameState) -> None:
 
 def calculate_score(p: Player, gs: GameState) -> int:
     """Calculate final score."""
-    score = p.gold + p.kills * 50 + p.deepest_floor * 200 + p.damage_dealt
+    score = p.gold + p.kills * B["score_per_kill"] + p.deepest_floor * B["score_per_floor"] + p.damage_dealt
     if gs.victory:
-        score += 5000
+        score += B["score_victory_bonus"]
     return score
 
 

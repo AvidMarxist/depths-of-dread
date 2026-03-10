@@ -6,64 +6,106 @@ Contains AgentPlayer (Claude-powered hybrid AI) and agent game loop functions.
 from __future__ import annotations
 
 import curses
-import random
-import time
-import sys
 import json
 import os
+import random
 import subprocess
+import sys
+import time
 from collections import deque
-from typing import Any, TYPE_CHECKING
+from typing import TYPE_CHECKING, Any
 
 if TYPE_CHECKING:
-    from .game import GameState
-    from .entities import Item, Enemy, Player
     import io
+
+    from .entities import Enemy, Item, Player
+    from .game import GameState
 
 # Agent-commons: universal agentic testing framework (optional)
 try:
     sys.path.insert(0, os.path.join(os.path.dirname(os.path.abspath(__file__)), '..', 'agent-commons'))
     from agent_commons import (
-        ProgressStallDetector, ActionRepetitionDetector, ResourceBudgetMonitor,
-        DecisionTrace, StateSnapshotManager, ActionDistribution,
-        StructuredOutputValidator, StallRecoveryManager,
-        FeatureCoverageTracker, NoveltySeekerBias, DREAD_FEATURES,
-        PostRunSummaryReport, DeathAutopsy,
-        CallBudgetManager, TriggerDeduplicator,
+        DREAD_FEATURES,
+        ActionDistribution,
+        ActionRepetitionDetector,
+        CallBudgetManager,
+        DeathAutopsy,
+        DecisionTrace,
+        FeatureCoverageTracker,
+        NoveltySeekerBias,
+        PostRunSummaryReport,
+        ProgressStallDetector,
+        ResourceBudgetMonitor,
+        StallRecoveryManager,
+        StateSnapshotManager,
+        StructuredOutputValidator,
+        TriggerDeduplicator,
     )
     HAS_AGENT_COMMONS = True
 except ImportError:
     HAS_AGENT_COMMONS = False
 
+from .agent_ui import (
+    AGENT_PANEL_MIN_W,
+    AGENT_PANEL_X,
+    AGENT_SPLIT_MIN_COLS,
+    FeatureTracker,
+    _pilot_process_key,
+    _render_agent_panel,
+)
+from .bot import BotPlayer, _bot_execute_action, _update_explored_from_fov
+from .combat import *
+from .combat import (
+    _award_kill,
+    _bestiary_record,
+    _chase_move,
+    _check_levelups,
+    _check_traps_on_move,
+    _compute_noise,
+    _disarm_trap,
+    _flee_move,
+    _passive_trap_detect,
+    _search_for_traps,
+    _stealth_detection,
+    _trigger_trap,
+    _try_enemy_move,
+    _update_boss_phase,
+)
 from .constants import *
 from .constants import _CHALLENGE_MODES, _DIR_MAP
 from .entities import *
-from .entities import _unlock_next_spell, _unlock_next_ability
-from .mapgen import *
-from .mapgen import _has_los, compute_fov, astar
-from .combat import *
-from .combat import (_bestiary_record, _award_kill, _check_levelups, _trigger_trap,
-                     _check_traps_on_move, _passive_trap_detect, _search_for_traps,
-                     _disarm_trap, _compute_noise, _stealth_detection, _update_boss_phase,
-                     _try_enemy_move, _flee_move, _chase_move)
+from .entities import _unlock_next_ability, _unlock_next_spell
 from .items import *
-from .items import (_get_direction_delta, _animate_projectile, _launch_projectile,
-                    _apply_spell_resist, _cast_spell, _execute_ability,
-                    _journal_potion_desc, _journal_scroll_desc, _toggle_switch,
-                    _interact_pedestal, _interact_npc, _process_branch_effects)
-from .ui import *
-from .ui import (_draw_tile, _inv_letter, _inv_key_to_idx, _describe_tile, _bfs_unexplored)
-from .persistence import *
-from .persistence import (_default_lifetime_stats, _compute_checksum,
-                          _serialize_item, _serialize_item_on_ground, _serialize_enemy,
-                          _deserialize_item, _deserialize_item_ground, _deserialize_enemy,
-                          _format_lifetime_stats_lines)
-
-from .bot import BotPlayer, _bot_execute_action, _update_explored_from_fov
-from .agent_ui import (
-    FeatureTracker, _render_agent_panel, _pilot_process_key,
-    AGENT_PANEL_X, AGENT_PANEL_MIN_W, AGENT_SPLIT_MIN_COLS,
+from .items import (
+    _animate_projectile,
+    _apply_spell_resist,
+    _cast_spell,
+    _execute_ability,
+    _get_direction_delta,
+    _interact_npc,
+    _interact_pedestal,
+    _journal_potion_desc,
+    _journal_scroll_desc,
+    _launch_projectile,
+    _process_branch_effects,
+    _toggle_switch,
 )
+from .mapgen import *
+from .mapgen import _has_los, astar, compute_fov
+from .persistence import *
+from .persistence import (
+    _compute_checksum,
+    _default_lifetime_stats,
+    _deserialize_enemy,
+    _deserialize_item,
+    _deserialize_item_ground,
+    _format_lifetime_stats_lines,
+    _serialize_enemy,
+    _serialize_item,
+    _serialize_item_on_ground,
+)
+from .ui import *
+from .ui import _bfs_unexplored, _describe_tile, _draw_tile, _inv_key_to_idx, _inv_letter
 
 
 def _get_game() -> Any:

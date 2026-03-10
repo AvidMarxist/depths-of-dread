@@ -1,17 +1,24 @@
 from __future__ import annotations
 
-import random
 import curses
-from typing import Any, TYPE_CHECKING
+import random
+from typing import TYPE_CHECKING, Any
 
+from .combat import (
+    _award_kill,
+    _check_levelups,
+    _check_traps_on_move,
+    _compute_noise,
+    _passive_trap_detect,
+    player_attack,
+    sound_alert,
+)
 from .constants import *
-from .entities import Item, Enemy, Player
-from .mapgen import astar, _has_los, compute_fov
-from .combat import (sound_alert, _award_kill, _check_levelups, _compute_noise,
-                     player_attack, _check_traps_on_move, _passive_trap_detect)
+from .entities import Enemy, Item
 
 if TYPE_CHECKING:
     from collections.abc import Callable
+
     from .game import GameState
 
 
@@ -48,7 +55,7 @@ def use_potion(gs: GameState, item: Item) -> None:
         p.status_effects["Speed"] = B["speed_duration_base"] + p.level * B["speed_duration_level_scale"]
         gs.msg("Everything seems to slow down!", C_CYAN)
     elif eff == "Poison":
-        d = random.randint(5, 15)
+        d = random.randint(B["poison_potion_min"], B["poison_potion_max"])
         p.hp -= d
         gs.msg(f"Urgh! Poison! (-{d} HP)", C_RED)
         if p.hp <= 0:
@@ -71,7 +78,7 @@ def use_potion(gs: GameState, item: Item) -> None:
         p.status_effects["Berserk"] = B["berserk_duration"]
         gs.msg("BLOOD RAGE! You see red!", C_RED)
     elif eff == "Mana":
-        restored = min(p.max_mana - p.mana, 15 + p.level * 2)
+        restored = min(p.max_mana - p.mana, B["mana_potion_base"] + p.level * B["mana_potion_level_scale"])
         p.mana += restored
         gs.msg(f"Magical energy floods your mind! (+{restored} MP)", C_CYAN)
     p.inventory.remove(item)
@@ -101,8 +108,8 @@ def use_scroll(gs: GameState, item: Item) -> None:
     elif eff == "Fireball":
         kills = 0
         for e in gs.enemies:
-            if abs(e.x-p.x) + abs(e.y-p.y) <= 4:
-                e.hp -= random.randint(15, 30)
+            if abs(e.x-p.x) + abs(e.y-p.y) <= B["scroll_fireball_range"]:
+                e.hp -= random.randint(B["scroll_fireball_min"], B["scroll_fireball_max"])
                 if not e.is_alive():
                     kills += _award_kill(gs, e, msg=False)
         gs.msg(f"FIRE ERUPTS! {kills} enemies caught in the blast!", C_RED)
@@ -115,19 +122,19 @@ def use_scroll(gs: GameState, item: Item) -> None:
         gs.msg("The entire floor is revealed!", C_CYAN)
     elif eff == "Enchant":
         if p.weapon:
-            p.weapon.data["bonus"] = p.weapon.data.get("bonus", 0) + 2
+            p.weapon.data["bonus"] = p.weapon.data.get("bonus", 0) + B["scroll_enchant_bonus_add"]
             lo, hi = p.weapon.data["dmg"]
-            p.weapon.data["dmg"] = (lo+1, hi+1)
+            p.weapon.data["dmg"] = (lo + B["scroll_enchant_dmg_add"], hi + B["scroll_enchant_dmg_add"])
             gs.msg(f"Your {p.weapon.display_name} glows with power!", C_YELLOW)
         elif p.armor:
-            p.armor.data["defense"] += 2
+            p.armor.data["defense"] += B["scroll_enchant_bonus_add"]
             gs.msg(f"Your {p.armor.display_name} shimmers!", C_YELLOW)
         else:
             gs.msg("The magic dissipates uselessly.", C_DARK)
     elif eff == "Fear":
         c = 0
         for e in gs.enemies:
-            if abs(e.x-p.x)+abs(e.y-p.y) <= 8 and not e.boss:
+            if abs(e.x-p.x)+abs(e.y-p.y) <= B["scroll_fear_range"] and not e.boss:
                 e.alerted = False
                 c += 1
         gs.msg(f"{c} enemies flee in terror!", C_MAGENTA)
@@ -147,8 +154,8 @@ def use_scroll(gs: GameState, item: Item) -> None:
             if d < nd:
                 nearest = e
                 nd = d
-        if nearest and nd <= 10:
-            dmg = random.randint(20, 40)
+        if nearest and nd <= B["scroll_lightning_range"]:
+            dmg = random.randint(B["scroll_lightning_min"], B["scroll_lightning_max"])
             nearest.hp -= dmg
             gs.msg(f"Lightning strikes {nearest.name} for {dmg}!", C_CYAN)
             if not nearest.is_alive():
@@ -165,8 +172,8 @@ def use_food(gs: GameState, item: Item) -> None:
     p.hunger = min(100, p.hunger + n)
     p.foods_eaten += 1
     gs.msg(f"You eat the {item.display_name}. ({n} nutrition)", C_GREEN)
-    if item.data.get("name") == "Mystery Meat" and random.random() < 0.2:
-        d = random.randint(1, 5)
+    if item.data.get("name") == "Mystery Meat" and random.random() < B["mystery_meat_sick_chance"]:
+        d = random.randint(B["mystery_meat_damage_min"], B["mystery_meat_damage_max"])
         gs.msg(f"Ugh, that tasted terrible! (-{d} HP)", C_RED)
         p.hp -= d
         if p.hp <= 0:
@@ -188,15 +195,18 @@ def pray_at_shrine(gs: GameState) -> None:
         p.hp = p.max_hp
         gs.msg("Divine light! Fully restored!", C_YELLOW)
     elif roll < threshold_maxhp:
-        p.max_hp += 5
-        p.hp += 5
-        gs.msg("Vitality increases! (+5 max HP)", C_GREEN)
+        bonus = B["shrine_max_hp_bonus"]
+        p.max_hp += bonus
+        p.hp += bonus
+        gs.msg(f"Vitality increases! (+{bonus} max HP)", C_GREEN)
     elif roll < threshold_str:
-        p.strength += 2
-        gs.msg("Strength flows through you! (+2 STR)", C_YELLOW)
+        bonus = B["shrine_str_bonus"]
+        p.strength += bonus
+        gs.msg(f"Strength flows through you! (+{bonus} STR)", C_YELLOW)
     elif roll < threshold_def:
-        p.defense += 2
-        gs.msg("Your body toughens! (+2 DEF)", C_BLUE)
+        bonus = B["shrine_def_bonus"]
+        p.defense += bonus
+        gs.msg(f"Your body toughens! (+{bonus} DEF)", C_BLUE)
     elif roll < threshold_nothing:
         gs.msg("The shrine is silent.", C_DARK)
     else:
@@ -258,7 +268,7 @@ def process_status(gs: GameState) -> None:
     # Torch fuel burn (only when lit)
     if gs.player.torch_lit and gs.player.torch_fuel > 0:
         gs.player.torch_fuel -= 1
-        if gs.player.torch_fuel == 50:
+        if gs.player.torch_fuel == B["torch_flicker_threshold"]:
             gs.msg("Your torch flickers...", C_YELLOW)
         elif gs.player.torch_fuel == 0:
             gs.msg("Your torch goes out! Darkness closes in!", C_RED)
@@ -270,7 +280,7 @@ def process_status(gs: GameState) -> None:
     # Speedrun challenge: floor timer
     if gs.challenge_speedrun and not gs.game_over:
         gs.speedrun_timer += 1
-        floor_limit = 100 + p.floor * 20  # Gets harder on deeper floors
+        floor_limit = B["speedrun_base_timer"] + p.floor * B["speedrun_per_floor"]  # Gets harder on deeper floors
         if gs.speedrun_timer >= floor_limit:
             gs.game_over = True
             gs.death_cause = "ran out of time (speedrun)"
@@ -278,9 +288,9 @@ def process_status(gs: GameState) -> None:
             sound_alert(gs, "death")
             return
         remaining = floor_limit - gs.speedrun_timer
-        if remaining == 20:
+        if remaining == B["speedrun_warn_critical"]:
             gs.msg(f"SPEEDRUN: Only {remaining} turns left on this floor!", C_RED)
-        elif remaining == 50:
+        elif remaining == B["speedrun_warn_caution"]:
             gs.msg(f"SPEEDRUN: {remaining} turns remaining.", C_YELLOW)
     # Branch floor environmental mechanics
     if gs.active_branch and not gs.game_over:
@@ -302,7 +312,7 @@ def _process_branch_effects(gs: GameState) -> None:
                 p.hp -= cold_dmg
                 p.damage_taken += cold_dmg
                 if gs.turn_count % 3 == 0:
-                    gs.msg("The frigid water chills your bones! (-{} HP)".format(cold_dmg), C_CYAN)
+                    gs.msg(f"The frigid water chills your bones! (-{cold_dmg} HP)", C_CYAN)
                 if p.hp <= 0:
                     gs.game_over = True
                     gs.death_cause = "frozen in the crypts"
@@ -318,7 +328,7 @@ def _process_branch_effects(gs: GameState) -> None:
                         p.hp -= heat_dmg
                         p.damage_taken += heat_dmg
                         if gs.turn_count % 4 == 0:
-                            gs.msg("The intense heat sears you! (-{} HP)".format(heat_dmg), C_LAVA)
+                            gs.msg(f"The intense heat sears you! (-{heat_dmg} HP)", C_LAVA)
                         if p.hp <= 0:
                             gs.game_over = True
                             gs.death_cause = "burned by volcanic heat"
@@ -328,7 +338,7 @@ def _process_branch_effects(gs: GameState) -> None:
         # Random confusion from psychic ambient energy
         if random.random() < B["mind_halls_confusion_chance"]:
             if "Confusion" not in p.status_effects:
-                p.status_effects["Confusion"] = random.randint(2, 4)
+                p.status_effects["Confusion"] = random.randint(B["mind_halls_confusion_min"], B["mind_halls_confusion_max"])
                 gs.msg("Psychic whispers cloud your mind!", C_MAGENTA)
     elif branch == "beast_warrens":
         # Beast Warrens: enemies have boosted detection range (handled in detection)
@@ -337,21 +347,21 @@ def _process_branch_effects(gs: GameState) -> None:
             for e in gs.enemies:
                 if not e.alerted and e.alertness == "unwary":
                     dist = abs(e.x - p.x) + abs(e.y - p.y)
-                    if dist <= 10:
+                    if dist <= B["beast_warrens_alert_range"]:
                         e.alertness = "alert"
                         e.alerted = True
     elif branch == "fungal_depths":
         # Spore clouds: periodic poison chance
-        if gs.turn_count % 5 == 0 and random.random() < 0.15:
+        if gs.turn_count % 5 == 0 and random.random() < B["fungal_spore_poison_chance"]:
             if "Poison" not in p.status_effects:
-                p.status_effects["Poison"] = 3
+                p.status_effects["Poison"] = B["fungal_spore_poison_duration"]
                 gs.msg("Spores fill the air! You inhale poison!", C_GREEN)
     elif branch == "trapped_halls":
         # Harder to detect traps in this branch (handled by trap_detect_penalty)
         pass  # Extra traps already handled in branch defs
     elif branch == "void_rift":
         # Random teleportation chance
-        if gs.turn_count % 8 == 0 and random.random() < 0.10:
+        if gs.turn_count % 8 == 0 and random.random() < B["void_rift_teleport_chance"]:
             pos = gs._find_spawn_pos()
             if pos:
                 p.x, p.y = pos
@@ -367,7 +377,7 @@ def _process_branch_effects(gs: GameState) -> None:
                         p.hp -= heat_dmg
                         p.damage_taken += heat_dmg
                         if gs.turn_count % 3 == 0:
-                            gs.msg("Molten metal sears you! (-{} HP)".format(heat_dmg), C_LAVA)
+                            gs.msg(f"Molten metal sears you! (-{heat_dmg} HP)", C_LAVA)
                         if p.hp <= 0:
                             gs.game_over = True
                             gs.death_cause = "melted in the Infernal Forge"
@@ -524,7 +534,7 @@ def _launch_projectile(gs: GameState, dx: int, dy: int, proj_type: str, proj_ite
         char = '-' if dy == 0 else '|'
         color = C_YELLOW
     elif proj_type == "dagger":
-        max_range = 5
+        max_range = B["throwing_dagger_range"]
         base_dmg = proj_item.data["dmg"]
         bonus = 0
         proj_item.count -= 1
@@ -533,7 +543,7 @@ def _launch_projectile(gs: GameState, dx: int, dy: int, proj_type: str, proj_ite
         char = '/' if dx != 0 and dy != 0 else ('-' if dy == 0 else '|')
         color = C_WHITE
     elif proj_type == "wand":
-        max_range = 8
+        max_range = B["wand_base_range"]
         base_dmg = proj_item.data["dmg"]
         bonus = 0
         # Wand class scaling (#8)
@@ -726,7 +736,7 @@ def _spell_lightning_bolt(gs: GameState, scr: Any, spell_info: dict[str, Any], d
     path = []
     hits = 0
     total_dmg = 0
-    for _ in range(12):
+    for _ in range(B["lightning_bolt_range"]):
         x += dx
         y += dy
         if x < 0 or x >= MAP_W or y < 0 or y >= MAP_H:
@@ -750,8 +760,8 @@ def _spell_lightning_bolt(gs: GameState, scr: Any, spell_info: dict[str, Any], d
             gs.msg("Lightning arcs through the water!", C_YELLOW)
             for e in gs.enemies:
                 if (e.is_alive() and gs.tiles[e.y][e.x] == T_WATER
-                        and abs(e.x - px2) + abs(e.y - py2) <= 3):
-                    water_dmg = random.randint(5, 15)
+                        and abs(e.x - px2) + abs(e.y - py2) <= B["lightning_water_aoe_range"]):
+                    water_dmg = random.randint(B["lightning_water_aoe_min"], B["lightning_water_aoe_max"])
                     water_dmg = _apply_spell_resist(gs, e, water_dmg, "lightning")
                     e.hp -= water_dmg
                     total_dmg += water_dmg
@@ -962,8 +972,8 @@ def use_class_ability(gs: GameState, scr: Any = None) -> bool:
         for e in gs.enemies:
             if e.is_alive() and (e.x, e.y) in gs.visible:
                 dist = abs(e.x - p.x) + abs(e.y - p.y)
-                if dist <= 6:
-                    e.frozen_turns = max(e.frozen_turns, 5)
+                if dist <= B["battle_cry_range"]:
+                    e.frozen_turns = max(e.frozen_turns, B["battle_cry_freeze_turns"])
                     frozen_count += 1
         gs.msg(f"BATTLE CRY! {frozen_count} enemies frozen in terror!", C_RED)
         p.ability_cooldown = B["battle_cry_cooldown"]
@@ -996,8 +1006,8 @@ def use_class_ability(gs: GameState, scr: Any = None) -> bool:
             dx, dy = MOVE_KEYS_LOCAL[key]
         else:
             dx, dy = 1, 0  # default for headless
-        # Hit 3x3 area, 5 tiles out
-        cx, cy = p.x + dx * 5, p.y + dy * 5
+        # Hit 3x3 area at range
+        cx, cy = p.x + dx * B["arcane_blast_range"], p.y + dy * B["arcane_blast_range"]
         _animate_blast(gs, cx, cy, 1, '*', C_CYAN)
         hit_count = 0
         kills = 0
@@ -1261,12 +1271,12 @@ def use_alchemy_table(gs: GameState) -> bool:
         # Even with nothing to identify, grant a minor alchemical boon
         boon = random.choice(["mana", "resist", "clarity"])
         if boon == "mana" and p.max_mana > 0:
-            restored = min(p.max_mana - p.mana, 10)
+            restored = min(p.max_mana - p.mana, B["alchemy_mana_restore"])
             p.mana += restored
             gs.msg(f"The table's residual magic restores {restored} MP!", C_CYAN)
         elif boon == "resist":
             gs.msg("Alchemical fumes grant temporary Resistance!", C_CYAN)
-            p.status_effects["Resistance"] = p.status_effects.get("Resistance", 0) + 20
+            p.status_effects["Resistance"] = p.status_effects.get("Resistance", 0) + B["alchemy_resistance_duration"]
         else:
             # Reveal trap locations on current floor
             revealed = 0
@@ -1366,10 +1376,10 @@ def _interact_pedestal(gs: GameState, px: int, py: int) -> bool:
     """Light a pedestal (costs torch fuel) (#9)."""
     if gs.tiles[py][px] != T_PEDESTAL_UNLIT:
         return False
-    if gs.player.torch_fuel < 10:
+    if gs.player.torch_fuel < B["pedestal_torch_cost"]:
         gs.msg("Not enough torch fuel to light the pedestal!", C_RED)
         return False
-    gs.player.torch_fuel -= 10
+    gs.player.torch_fuel -= B["pedestal_torch_cost"]
     gs.tiles[py][px] = T_PEDESTAL_LIT
     gs.msg("The pedestal flares to life!", C_YELLOW)
     # Check if torch or sequence puzzle is solved
@@ -1412,7 +1422,7 @@ def _interact_pedestal(gs: GameState, px: int, py: int) -> bool:
                         gs.tiles[py2][px2] = T_PEDESTAL_UNLIT
                     gs.msg("Wrong sequence! The pedestals go dark.", C_RED)
                     # Refund torch fuel since we'll deduct again
-                    gs.player.torch_fuel += 10
+                    gs.player.torch_fuel += B["pedestal_torch_cost"]
                     return False
     return True
 
@@ -1461,15 +1471,16 @@ def _interact_npc(gs: GameState, npc: dict[str, Any]) -> None:
 
     elif npc["interaction"] == "buff":
         buff_type = random.choice(["Strength", "Resistance", "Speed"])
+        dur = B["npc_buff_duration"]
         if buff_type == "Strength":
-            p.status_effects["Strength"] = 30
-            gs.msg("You feel surging power! (+Strength for 30 turns)", C_GREEN)
+            p.status_effects["Strength"] = dur
+            gs.msg(f"You feel surging power! (+Strength for {dur} turns)", C_GREEN)
         elif buff_type == "Resistance":
-            p.status_effects["Resistance"] = 30
-            gs.msg("A protective ward surrounds you! (+Resistance for 30 turns)", C_CYAN)
+            p.status_effects["Resistance"] = dur
+            gs.msg(f"A protective ward surrounds you! (+Resistance for {dur} turns)", C_CYAN)
         elif buff_type == "Speed":
-            p.status_effects["Speed"] = 30
-            gs.msg("Your reflexes sharpen! (+Speed for 30 turns)", C_YELLOW)
+            p.status_effects["Speed"] = dur
+            gs.msg(f"Your reflexes sharpen! (+Speed for {dur} turns)", C_YELLOW)
 
     elif npc["interaction"] == "warning":
         # Give a weapon and bestiary hint
@@ -1577,7 +1588,7 @@ def player_move(gs: GameState, dx: int, dy: int) -> bool:
                     return False
     if tile == T_WATER:
         gs.msg("You splash through water.", C_WATER)
-        if random.random() < 0.5:
+        if random.random() < B["water_extra_hunger_chance"]:
             p.hunger = max(0, p.hunger - B["hunger_per_move"])  # Extra hunger cost
         # Water extinguishes burning/fire effects
         if "Burning" in p.status_effects:
@@ -1683,7 +1694,7 @@ def player_move(gs: GameState, dx: int, dy: int) -> bool:
                 if item:
                     item.identified = True
                     gs.items.append(item)
-                    gs.msg(f"You find something useful nearby!", C_GOLD)
+                    gs.msg("You find something useful nearby!", C_GOLD)
     # NPC interaction
     for npc in gs.npcs:
         if npc["x"] == nx and npc["y"] == ny and not npc["interacted"]:

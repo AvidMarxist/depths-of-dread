@@ -1,12 +1,12 @@
 from __future__ import annotations
 
-import random
 import curses
-from typing import Any, TYPE_CHECKING
+import random
+from typing import TYPE_CHECKING, Any
 
 from .constants import *
-from .entities import Item, Enemy, Player
-from .mapgen import astar, _has_los, compute_fov
+from .entities import Enemy, Item
+from .mapgen import _has_los, astar
 
 if TYPE_CHECKING:
     from .game import GameState
@@ -155,7 +155,7 @@ def _trigger_trap(gs: GameState, trap: dict[str, Any], target_name: str = "You",
             p.status_effects["Poison"] = B["poison_duration"]
             gs.msg("You feel poison coursing through your veins!", C_GREEN)
         elif eff == "stun":
-            p.status_effects["Paralysis"] = random.randint(1, 2)
+            p.status_effects["Paralysis"] = random.randint(B["pit_trap_stun_min"], B["pit_trap_stun_max"])
             gs.msg("You fall into a pit! Stunned!", C_YELLOW)
         elif eff == "teleport":
             pos = gs._find_spawn_pos()
@@ -169,7 +169,7 @@ def _trigger_trap(gs: GameState, trap: dict[str, Any], target_name: str = "You",
             gs.msg("An alarm sounds! All enemies are alerted!", C_RED)
         elif eff == "confusion":
             if "Confusion" not in p.status_effects:
-                p.status_effects["Confusion"] = 5
+                p.status_effects["Confusion"] = B["confusion_trap_duration"]
                 gs.msg("Noxious gas fills the air! You are confused!", C_GREEN)
         if p.hp <= 0:
             gs.game_over = True
@@ -208,7 +208,7 @@ def _passive_trap_detect(gs: GameState) -> None:
         if trap["visible"] or trap["disarmed"] or trap["triggered"]:
             continue
         if abs(trap["x"] - p.x) <= B["trap_detect_radius"] and abs(trap["y"] - p.y) <= B["trap_detect_radius"]:
-            chance = B["trap_rogue_detect_bonus"] if p.player_class == "rogue" else 5
+            chance = B["trap_rogue_detect_bonus"] if p.player_class == "rogue" else B["trap_passive_detect_base"]
             if random.randint(1, 100) <= chance:
                 trap["visible"] = True
                 tdata = TRAP_TYPES[trap["type"]]
@@ -232,7 +232,7 @@ def _search_for_traps(gs: GameState) -> None:
                     tdata = TRAP_TYPES[trap["type"]]
                     roll = p.level + random.randint(1, 20)
                     if p.player_class == "rogue":
-                        roll += 5
+                        roll += B["search_rogue_bonus"]
                     if roll >= tdata["detect_dc"]:
                         trap["visible"] = True
                         p.traps_found += 1
@@ -243,8 +243,8 @@ def _search_for_traps(gs: GameState) -> None:
                 if gs.tiles[ty][tx] == T_SECRET_WALL:
                     roll = p.level + random.randint(1, 20)
                     if p.player_class == "rogue":
-                        roll += 5
-                    if roll >= 15:  # DC 15 to find secret passage
+                        roll += B["search_rogue_bonus"]
+                    if roll >= B["secret_wall_detect_dc"]:
                         gs.tiles[ty][tx] = T_DOOR
                         p.secrets_found += 1
                         gs.msg("You discover a hidden passage!", C_YELLOW)
@@ -329,7 +329,7 @@ def player_attack(gs: GameState, enemy: Enemy) -> None:
             gs.msg(f"The {enemy.name} is vulnerable to {wpn_dmg_type}!", C_YELLOW)
     # Troll fire interaction: suppress regen
     if enemy.etype == "troll" and wpn_dmg_type == "fire":
-        enemy.regen_suppressed = 5
+        enemy.regen_suppressed = B["regen_suppression_duration"]
         gs.msg("Fire suppresses the Troll's regeneration!", C_YELLOW)
     enemy.hp -= dmg
     p.damage_dealt += dmg
@@ -365,7 +365,7 @@ def player_attack(gs: GameState, enemy: Enemy) -> None:
             proc_effect = p.weapon.data.get("enchant_proc_effect", "")
             if random.random() < proc_chance:
                 if proc_effect == "burn":
-                    enemy.regen_suppressed = max(enemy.regen_suppressed, 5)
+                    enemy.regen_suppressed = max(enemy.regen_suppressed, B["regen_suppression_duration"])
                     gs.msg(f"Your weapon ignites the {enemy.name}!", C_LAVA)
                 elif proc_effect == "slow":
                     enemy.frozen_turns = max(enemy.frozen_turns, 2)
@@ -378,11 +378,11 @@ def player_attack(gs: GameState, enemy: Enemy) -> None:
                     enemy.frozen_turns = max(enemy.frozen_turns, 1)
                     gs.msg(f"Lightning stuns the {enemy.name}!", C_YELLOW)
                 elif proc_effect == "lifesteal":
-                    heal_amt = max(1, dmg // 4)
+                    heal_amt = max(1, dmg // B["lifesteal_proc_divisor"])
                     p.hp = min(p.max_hp, p.hp + heal_amt)
                     gs.msg(f"Your vampiric blade drains {heal_amt} HP!", C_GREEN)
                 elif proc_effect == "crit":
-                    crit_bonus = max(1, dmg // 2)
+                    crit_bonus = max(1, dmg // B["keen_proc_divisor"])
                     enemy.hp -= crit_bonus
                     gs.msg(f"Keen edge! Extra {crit_bonus} damage!", C_YELLOW)
     # Lifesteal from boss weapons (#20)
@@ -483,10 +483,10 @@ def enemy_attack(gs: GameState, enemy: Enemy) -> None:
             p.status_effects["Silence"] = B["silence_duration"]
             gs.msg(f"The {enemy.name} silences your magic!", C_MAGENTA)
             _bestiary_record(gs, enemy.etype, "ability", "silence")
-    if p.hp > 0 and p.hp <= p.max_hp * 0.2:
+    if p.hp > 0 and p.hp <= p.max_hp * B["low_hp_pct_warning"]:
         gs.msg("!! LOW HP !!", C_RED)
         sound_alert(gs, "low_hp")
-    elif p.hp <= 20 and p.hp > 0:
+    elif p.hp <= B["low_hp_abs_warning"] and p.hp > 0:
         sound_alert(gs, "low_hp")
     if p.hp <= 0:
         gs.game_over = True
@@ -647,7 +647,7 @@ def process_enemies(gs: GameState) -> None:
                 elif "fire" in p.player_resists():
                     pass  # Fire resistance blocks aura
                 else:
-                    aura_dmg = random.randint(1, 3)
+                    aura_dmg = random.randint(B["fire_aura_damage_min"], B["fire_aura_damage_max"])
                     p.hp -= aura_dmg
                     p.damage_taken += aura_dmg
                     if gs.turn_count % 2 == 0:
@@ -719,7 +719,7 @@ def _update_boss_phase(gs: GameState, e: Enemy) -> None:
             _bestiary_record(gs, e.etype, "ability", "enrage")
         # Phase 3: summon bats periodically
         if e.boss_phase >= 3 and e.boss_phase_turn % B["vampire_phase3_bat_interval"] == 0:
-            if len(gs.enemies) < 25:
+            if len(gs.enemies) < B["max_enemies_on_floor"]:
                 pos = gs._find_spawn_pos()
                 if pos:
                     bat = Enemy(pos[0], pos[1], "bat")
@@ -761,26 +761,26 @@ def _update_boss_phase(gs: GameState, e: Enemy) -> None:
         if hp_pct <= B["mini_boss_phase2_threshold"] and e.boss_phase < 2:
             e.boss_phase = 2
             # Enrage: boost speed and damage
-            e.speed = ENEMY_TYPES[e.etype]["speed"] * 1.5
+            e.speed = ENEMY_TYPES[e.etype]["speed"] * B["mini_boss_enrage_speed_mult"]
             lo, hi = e.dmg
-            e.dmg = (int(lo * 1.3), int(hi * 1.3))
+            e.dmg = (int(lo * B["mini_boss_enrage_dmg_mult"]), int(hi * B["mini_boss_enrage_dmg_mult"]))
             gs.msg(f"The {e.name} ENRAGES!", C_RED)
             _bestiary_record(gs, e.etype, "ability", "enrage")
             # Type-specific phase 2 effects
             if e.etype == "elder_brain":
-                e.paralyze_chance = min(0.60, e.paralyze_chance + 0.20)
+                e.paralyze_chance = min(B["elder_brain_paralyze_cap"], e.paralyze_chance + B["elder_brain_paralyze_increase"])
                 gs.msg("Psychic energy intensifies!", C_MAGENTA)
             elif e.etype == "flame_tyrant":
                 e.fire_aura = True
                 gs.msg("Flames erupt around the Flame Tyrant!", C_LAVA)
             elif e.etype == "crypt_guardian":
-                e.regen = 2
+                e.regen = B["crypt_guardian_enrage_regen"]
                 gs.msg("The Crypt Guardian draws power from the dead!", C_CYAN)
             elif e.etype == "beast_lord":
                 # Summon pack allies
-                for _ in range(2):
+                for _ in range(B["beast_lord_summon_count"]):
                     pos = gs._find_spawn_pos()
-                    if pos and len(gs.enemies) < 25:
+                    if pos and len(gs.enemies) < B["max_enemies_on_floor"]:
                         wolf = Enemy(pos[0], pos[1], "rat")
                         wolf.alerted = True
                         wolf.alertness = "alert"
@@ -790,21 +790,21 @@ def _update_boss_phase(gs: GameState, e: Enemy) -> None:
     elif e.etype == "abyssal_horror":
         if hp_pct <= B["boss_phase3_threshold"] and e.boss_phase < 3:
             e.boss_phase = 3
-            e.regen = 8
-            e.speed = ENEMY_TYPES[e.etype]["speed"] * 1.5
+            e.regen = B["abyssal_phase3_regen"]
+            e.speed = ENEMY_TYPES[e.etype]["speed"] * B["abyssal_phase3_speed_mult"]
             gs.msg("The Abyssal Horror tears reality apart! The void consumes all!", C_RED)
             _bestiary_record(gs, e.etype, "ability", "void_rage")
         elif hp_pct <= B["boss_phase2_threshold"] and e.boss_phase < 2:
             e.boss_phase = 2
             e.ai = "chase"
             lo, hi = e.dmg
-            e.dmg = (int(lo * 1.5), int(hi * 1.5))
+            e.dmg = (int(lo * B["abyssal_phase2_dmg_mult"]), int(hi * B["abyssal_phase2_dmg_mult"]))
             gs.msg("The Abyssal Horror ENRAGES! Tentacles lash in all directions!", C_RED)
             _bestiary_record(gs, e.etype, "ability", "enrage")
         # Phase 3: AOE void damage
         if e.boss_phase >= 3:
-            if abs(e.x - p.x) + abs(e.y - p.y) <= 3:
-                void_dmg = B["dread_phase3_aoe_damage"] + 3
+            if abs(e.x - p.x) + abs(e.y - p.y) <= B["abyssal_phase3_aoe_range"]:
+                void_dmg = B["dread_phase3_aoe_damage"] + B["abyssal_phase3_aoe_extra_dmg"]
                 p.hp -= void_dmg
                 p.damage_taken += void_dmg
                 if gs.turn_count % 2 == 0:
@@ -814,8 +814,8 @@ def _update_boss_phase(gs: GameState, e: Enemy) -> None:
                     gs.death_cause = "consumed by the Abyssal Horror"
                     sound_alert(gs, "death")
         # Phase 2+: summon void stalkers
-        if e.boss_phase >= 2 and e.boss_phase_turn % 5 == 0:
-            if len(gs.enemies) < 25:
+        if e.boss_phase >= 2 and e.boss_phase_turn % B["abyssal_summon_interval"] == 0:
+            if len(gs.enemies) < B["max_enemies_on_floor"]:
                 pos = gs._find_spawn_pos()
                 if pos:
                     minion = Enemy(pos[0], pos[1], "void_stalker")
@@ -829,9 +829,9 @@ def _update_boss_phase(gs: GameState, e: Enemy) -> None:
     elif e.etype in ("fungal_queen", "trap_master", "void_herald", "inferno_king"):
         if hp_pct <= B["mini_boss_phase2_threshold"] and e.boss_phase < 2:
             e.boss_phase = 2
-            e.speed = ENEMY_TYPES[e.etype]["speed"] * 1.5
+            e.speed = ENEMY_TYPES[e.etype]["speed"] * B["mini_boss_enrage_speed_mult"]
             lo, hi = e.dmg
-            e.dmg = (int(lo * 1.3), int(hi * 1.3))
+            e.dmg = (int(lo * B["mini_boss_enrage_dmg_mult"]), int(hi * B["mini_boss_enrage_dmg_mult"]))
             gs.msg(f"The {e.name} ENRAGES!", C_RED)
             _bestiary_record(gs, e.etype, "ability", "enrage")
 
@@ -947,8 +947,8 @@ def _ranged_move(gs: GameState, e: Enemy) -> None:
         enemy_attack(gs, e)
     elif dist <= 5 and _has_los(gs.tiles, e.x, e.y, p.x, p.y):
         dmg = random.randint(e.dmg[0], e.dmg[1])
-        dmg = max(1, dmg - p.total_defense() // 3)
-        if random.randint(1, 100) <= p.evasion_chance() + 10:
+        dmg = max(1, dmg - p.total_defense() // B["ranged_defense_divisor"])
+        if random.randint(1, 100) <= p.evasion_chance() + B["ranged_evasion_bonus"]:
             gs.msg("An arrow whizzes past you!", C_YELLOW)
         else:
             p.hp -= dmg
@@ -971,7 +971,7 @@ def _summoner_move(gs: GameState, e: Enemy) -> None:
     if dist <= 1:
         enemy_attack(gs, e)
         return
-    if e.summon_cooldown <= 0 and len(gs.enemies) < 25:
+    if e.summon_cooldown <= 0 and len(gs.enemies) < B["max_enemies_on_floor"]:
         for ddx, ddy in [(-1,0),(1,0),(0,-1),(0,1)]:
             sx, sy = e.x+ddx, e.y+ddy
             if (0 < sx < MAP_W-1 and 0 < sy < MAP_H-1 and
@@ -982,7 +982,7 @@ def _summoner_move(gs: GameState, e: Enemy) -> None:
                 minion.alerted = True
                 gs.enemies.append(minion)
                 gs.msg(f"The {e.name} summons a {minion.name}!", C_MAGENTA)
-                e.summon_cooldown = 5
+                e.summon_cooldown = B["summoner_cooldown"]
                 break
     if dist < 4:
         dx = -1 if p.x > e.x else 1

@@ -273,6 +273,168 @@ BALANCE: dict[str, Any] = {
     "stealth_asleep_crit_mult": 2.0,  # Backstab sleeping enemy = 2x damage
     "stealth_unwary_crit_mult": 1.5,  # Backstab unwary enemy = 1.5x damage
     "asleep_spawn_chance": 0.60,      # 60% of enemies spawn asleep
+
+    # --- Potion Effects ---
+    "poison_potion_min": 5,           # Poison potion min damage
+    "poison_potion_max": 15,          # Poison potion max damage
+    "mana_potion_base": 15,           # Mana potion base restore
+    "mana_potion_level_scale": 2,     # Mana potion +per level
+
+    # --- Shrine Bonuses ---
+    "shrine_max_hp_bonus": 5,         # Max HP gained from shrine
+    "shrine_str_bonus": 2,            # Strength gained from shrine
+    "shrine_def_bonus": 2,            # Defense gained from shrine
+
+    # --- Scroll Effects ---
+    "scroll_fireball_range": 4,       # Scroll of Fireball AoE range
+    "scroll_fireball_min": 15,        # Scroll of Fireball min damage
+    "scroll_fireball_max": 30,        # Scroll of Fireball max damage
+    "scroll_enchant_bonus_add": 2,    # Scroll of Enchant: +bonus to weapon/armor
+    "scroll_enchant_dmg_add": 1,      # Scroll of Enchant: +dmg to weapon (lo and hi)
+    "scroll_fear_range": 8,           # Scroll of Fear: max Manhattan distance
+    "scroll_lightning_range": 10,     # Scroll of Lightning: max target distance
+    "scroll_lightning_min": 20,       # Scroll of Lightning: min damage
+    "scroll_lightning_max": 40,       # Scroll of Lightning: max damage
+
+    # --- NPC ---
+    "npc_buff_duration": 30,          # Duration of NPC sage/knight buffs
+
+    # --- Pedestal ---
+    "pedestal_torch_cost": 10,        # Torch fuel cost to light a pedestal
+
+    # --- Torch ---
+    "torch_flicker_threshold": 50,    # Fuel level that triggers flicker warning
+
+    # --- Speedrun ---
+    "speedrun_base_timer": 100,       # Base turn limit per floor
+    "speedrun_per_floor": 20,         # Extra turns per floor depth
+    "speedrun_warn_critical": 20,     # Turns remaining for critical warning
+    "speedrun_warn_caution": 50,      # Turns remaining for caution warning
+
+    # --- Branch Effects ---
+    "mind_halls_confusion_min": 2,    # Mind Halls confusion min duration
+    "mind_halls_confusion_max": 4,    # Mind Halls confusion max duration
+    "beast_warrens_alert_range": 10,  # Beast Warrens alert detection range
+    "fungal_spore_poison_chance": 0.15,  # Fungal Depths per-tick poison chance
+    "fungal_spore_poison_duration": 3,   # Fungal Depths poison duration
+    "void_rift_teleport_chance": 0.10,   # Void Rift random teleport chance
+
+    # --- Projectile Ranges ---
+    "throwing_dagger_range": 5,       # Throwing dagger max range
+    "wand_base_range": 8,             # Wand base range (before class mods)
+    "lightning_bolt_range": 12,       # Lightning Bolt spell range
+    "lightning_water_aoe_min": 5,     # Lightning water AoE min damage
+    "lightning_water_aoe_max": 15,    # Lightning water AoE max damage
+    "lightning_water_aoe_range": 3,   # Lightning water AoE spread range
+
+    # --- Class Ability Tuning ---
+    "arcane_blast_range": 5,          # Arcane Blast range (tiles out)
+    "battle_cry_range": 6,            # Battle Cry max enemy distance
+    "battle_cry_freeze_turns": 5,     # Battle Cry freeze duration
+
+    # --- Food ---
+    "mystery_meat_sick_chance": 0.2,  # Chance of food poisoning from Mystery Meat
+    "mystery_meat_damage_min": 1,     # Mystery Meat damage min
+    "mystery_meat_damage_max": 5,     # Mystery Meat damage max
+
+    # --- Alchemy Boons ---
+    "alchemy_mana_restore": 10,       # Mana restored when no items to identify
+    "alchemy_resistance_duration": 20,  # Resistance buff duration from alchemy
+
+    # --- Water ---
+    "water_extra_hunger_chance": 0.5, # Chance of extra hunger cost in water
+
+    # --- Trap Detection ---
+    "trap_passive_detect_base": 5,    # Non-rogue passive trap detect chance %
+    "search_rogue_bonus": 5,          # Rogue bonus to active search rolls
+    "secret_wall_detect_dc": 15,      # DC to find secret passage
+
+    # --- Trap Effects ---
+    "pit_trap_stun_min": 1,           # Pit trap stun min turns
+    "pit_trap_stun_max": 2,           # Pit trap stun max turns
+    "confusion_trap_duration": 5,     # Gas trap confusion duration
+
+    # --- Fire Aura ---
+    "fire_aura_damage_min": 1,        # Fire aura min damage per turn
+    "fire_aura_damage_max": 3,        # Fire aura max damage per turn
+
+    # --- Regen Suppression ---
+    "regen_suppression_duration": 5,  # Turns fire suppresses troll regen
+
+    # --- Enchantment Proc ---
+    "lifesteal_proc_divisor": 4,      # Vampiric proc: heal = dmg // this
+    "keen_proc_divisor": 2,           # Keen proc: bonus = dmg // this
+
+    # --- HP Warnings ---
+    "low_hp_pct_warning": 0.2,        # HP% threshold for low HP warning
+    "low_hp_abs_warning": 20,         # Absolute HP threshold for warning
+
+    # --- Enemy AI Limits ---
+    "max_enemies_on_floor": 25,       # Max enemies before stopping summons
+    "summoner_cooldown": 5,           # Turns between summoner spawns
+
+    # --- Ranged Enemy ---
+    "ranged_defense_divisor": 3,      # Ranged enemy: dmg - def // this
+    "ranged_evasion_bonus": 10,       # Extra evasion dodge chance vs ranged
+
+    # --- Boss Enrage ---
+    "mini_boss_enrage_speed_mult": 1.5,  # Mini-boss speed multiplier on enrage
+    "mini_boss_enrage_dmg_mult": 1.3,    # Mini-boss damage multiplier on enrage
+    "elder_brain_paralyze_increase": 0.20,  # Extra paralyze chance on enrage
+    "elder_brain_paralyze_cap": 0.60,       # Max paralyze chance
+    "crypt_guardian_enrage_regen": 2,       # Regen gained on enrage
+    "beast_lord_summon_count": 2,           # Allies summoned on enrage
+
+    # --- Abyssal Horror ---
+    "abyssal_phase3_regen": 8,           # Regen in phase 3
+    "abyssal_phase3_speed_mult": 1.5,    # Speed multiplier in phase 3
+    "abyssal_phase2_dmg_mult": 1.5,      # Damage multiplier in phase 2
+    "abyssal_phase3_aoe_range": 3,       # Void AOE range
+    "abyssal_phase3_aoe_extra_dmg": 3,   # Extra void damage beyond base
+    "abyssal_summon_interval": 5,        # Turns between void stalker summons
+
+    # --- Floor Gen ---
+    "branch_terrain_base_fraction": 0.03,   # Base fraction of tiles to convert
+    "wall_torch_room_chance": 0.40,         # Chance to place torches in a room
+    "puzzle_floor_chance": 0.25,            # Chance of puzzle on eligible floors
+    "npc_spawn_chance": 0.30,               # Chance of NPC on eligible floors
+    "fountain_spawn_chance": 0.4,           # Chance of fountain per floor
+    "secret_room_chance": 0.20,             # Chance of secret room on eligible floors
+    "secret_room_min_floor": 3,             # Minimum floor for secret rooms
+
+    # --- Secret Room Loot ---
+    "secret_room_weapon_chance": 0.4,       # Chance of weapon loot
+    "secret_room_gold_chance": 0.3,         # Chance of gold loot (cumulative)
+    "secret_room_gold_min": 50,             # Min gold in secret room
+    "secret_room_gold_max": 150,            # Max gold in secret room
+
+    # --- Item Counts ---
+    "arrow_count_min": 3,             # Min arrows per spawn
+    "arrow_count_max": 8,             # Max arrows per spawn
+    "dagger_count_min": 2,            # Min throwing daggers per spawn
+    "dagger_count_max": 5,            # Max throwing daggers per spawn
+
+    # --- Shop Pricing ---
+    "shop_floor_price_scale": 0.1,    # Price increase per floor (multiplier)
+    "shop_weapon_price_min": 20,      # Base weapon/armor price min
+    "shop_weapon_price_max": 50,      # Base weapon/armor price max
+    "shop_potion_price_min": 15,      # Potion/scroll price min
+    "shop_potion_price_max": 60,      # Potion/scroll price max
+    "shop_food_price_min": 10,        # Food price min
+    "shop_food_price_max": 25,        # Food price max
+    "shop_ring_price_min": 50,        # Ring price min
+    "shop_ring_price_max": 120,       # Ring price max
+
+    # --- Scoring ---
+    "score_per_kill": 50,             # Score points per kill
+    "score_per_floor": 200,           # Score points per floor reached
+    "score_victory_bonus": 5000,      # Bonus score for winning
+
+    # --- Fountain ---
+    "fountain_heal_min": 15,          # Fountain min heal
+    "fountain_heal_max": 30,          # Fountain max heal
+    "fountain_max_hp_chance": 0.10,   # Chance of permanent +max HP
+    "fountain_max_hp_bonus": 1,       # Max HP gained from fountain
 }
 
 # Difficulty presets — multipliers applied to BALANCE values

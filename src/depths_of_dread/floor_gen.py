@@ -10,19 +10,49 @@ import random
 from typing import TYPE_CHECKING
 
 from .constants import (
-    MAP_W, MAP_H, MAX_FLOORS,
-    T_FLOOR, T_WALL, T_CORRIDOR, T_STAIRS_DOWN, T_STAIRS_UP, T_STAIRS_LOCKED,
-    T_SHOP_FLOOR, T_SHRINE, T_ALCHEMY_TABLE, T_WALL_TORCH,
-    T_PEDESTAL_UNLIT, T_SWITCH_OFF, T_ENCHANT_ANVIL, T_FOUNTAIN,
-    T_WATER, T_LAVA, T_SECRET_WALL,
-    B, ENEMY_TYPES, WEAPON_TYPES, ARMOR_TYPES, BOW_TYPES, RING_TYPES,
-    WAND_TYPES, TORCH_TYPES, FOOD_TYPES, ARROW_ITEM, THROWING_DAGGER,
-    POTION_EFFECTS, SCROLL_EFFECTS,
-    DIFFICULTY_PRESETS, THEMES, BRANCH_CHOICES, BRANCH_DEFS,
-    TRAP_TYPES, NPC_TYPES, VIGNETTE_TEMPLATES,
-    C_WHITE, C_RED, C_YELLOW, C_CYAN, C_DARK, C_WATER,
+    ARMOR_TYPES,
+    ARROW_ITEM,
+    BOW_TYPES,
+    BRANCH_CHOICES,
+    BRANCH_DEFS,
+    C_CYAN,
+    C_RED,
+    C_YELLOW,
+    ENEMY_TYPES,
+    FOOD_TYPES,
+    MAP_H,
+    MAP_W,
+    MAX_FLOORS,
+    NPC_TYPES,
+    POTION_EFFECTS,
+    RING_TYPES,
+    SCROLL_EFFECTS,
+    T_ALCHEMY_TABLE,
+    T_CORRIDOR,
+    T_ENCHANT_ANVIL,
+    T_FLOOR,
+    T_FOUNTAIN,
+    T_LAVA,
+    T_PEDESTAL_UNLIT,
+    T_SECRET_WALL,
+    T_SHOP_FLOOR,
+    T_SHRINE,
+    T_STAIRS_DOWN,
+    T_STAIRS_LOCKED,
+    T_SWITCH_OFF,
+    T_WALL,
+    T_WALL_TORCH,
+    T_WATER,
+    THEMES,
+    THROWING_DAGGER,
+    TORCH_TYPES,
+    TRAP_TYPES,
+    VIGNETTE_TEMPLATES,
+    WAND_TYPES,
+    WEAPON_TYPES,
+    B,
 )
-from .entities import Item, Enemy
+from .entities import Enemy, Item
 from .mapgen import generate_dungeon
 
 if TYPE_CHECKING:
@@ -103,8 +133,8 @@ def _apply_branch_terrain(gs: GameState, floor_num: int, branch_key: str) -> Non
     floor_tiles = [(x, y) for y in range(MAP_H) for x in range(MAP_W)
                    if gs.tiles[y][x] == T_FLOOR]
     random.shuffle(floor_tiles)
-    water_count = int(len(floor_tiles) * 0.03 * bdef.get("water_boost", 1.0))
-    lava_count = int(len(floor_tiles) * 0.03 * bdef.get("lava_boost", 1.0))
+    water_count = int(len(floor_tiles) * B["branch_terrain_base_fraction"] * bdef.get("water_boost", 1.0))
+    lava_count = int(len(floor_tiles) * B["branch_terrain_base_fraction"] * bdef.get("lava_boost", 1.0))
     idx = 0
     for _ in range(water_count):
         if idx < len(floor_tiles):
@@ -158,7 +188,7 @@ def _populate_enemies(gs: GameState, floor_num: int) -> None:
             apex = Enemy(pos[0], pos[1], apex_type)
             apex.alertness = "unwary"
             gs.enemies.append(apex)
-            gs.msg(f"You sense something ancient and terrible on this floor...", C_RED)
+            gs.msg("You sense something ancient and terrible on this floor...", C_RED)
     for _ in range(num):
         if not eligible:
             break
@@ -237,15 +267,15 @@ def _random_item(gs: GameState, x: int, y: int, floor_num: int) -> Item | None:
             b = random.choice(eligible)
             return Item(x, y, "bow", b["name"], b)
         it = Item(x, y, "arrow", "Arrow", dict(ARROW_ITEM))
-        it.count = random.randint(3, 8)
+        it.count = random.randint(B["arrow_count_min"], B["arrow_count_max"])
         return it
     elif item_type == "arrow":
         it = Item(x, y, "arrow", "Arrow", dict(ARROW_ITEM))
-        it.count = random.randint(3, 8)
+        it.count = random.randint(B["arrow_count_min"], B["arrow_count_max"])
         return it
     elif item_type == "throwing_dagger":
         it = Item(x, y, "throwing_dagger", "Throwing Dagger", dict(THROWING_DAGGER))
-        it.count = random.randint(2, 5)
+        it.count = random.randint(B["dagger_count_min"], B["dagger_count_max"])
         return it
     elif item_type == "wand":
         eligible = [w for w in WAND_TYPES if w["tier"] <= (floor_num // 3) + 2]
@@ -279,14 +309,14 @@ def _place_shop(gs: GameState, floor_num: int) -> None:
         item = _random_item(gs, rx + 1, ry + 1, floor_num)
         if item:
             item.identified = True
-            floor_mult = 1 + floor_num * 0.1
-            price = int((item.data.get("tier", 1) + 1) * random.randint(20, 50) * floor_mult)
+            floor_mult = 1 + floor_num * B["shop_floor_price_scale"]
+            price = int((item.data.get("tier", 1) + 1) * random.randint(B["shop_weapon_price_min"], B["shop_weapon_price_max"]) * floor_mult)
             if item.item_type in ("potion", "scroll"):
-                price = int(random.randint(15, 60) * floor_mult)
+                price = int(random.randint(B["shop_potion_price_min"], B["shop_potion_price_max"]) * floor_mult)
             elif item.item_type == "food":
-                price = int(random.randint(10, 25) * floor_mult)
+                price = int(random.randint(B["shop_food_price_min"], B["shop_food_price_max"]) * floor_mult)
             elif item.item_type == "ring":
-                price = int(random.randint(50, 120) * floor_mult)
+                price = int(random.randint(B["shop_ring_price_min"], B["shop_ring_price_max"]) * floor_mult)
             shop_items.append(ShopItem(item, price))
     # Always stock healing and food
     heal = Item(0, 0, "potion", "Healing",
@@ -329,7 +359,7 @@ def _place_wall_torches(gs: GameState, floor_num: int) -> None:
     if not gs.rooms:
         return
     for room in gs.rooms:
-        if random.random() > 0.40:
+        if random.random() > B["wall_torch_room_chance"]:
             continue
         rx, ry, rw, rh = room
         if floor_num >= 10 and random.random() < 0.5:
@@ -360,7 +390,7 @@ def _place_wall_torches(gs: GameState, floor_num: int) -> None:
 
 
 def _place_puzzle(gs: GameState, floor_num: int) -> None:
-    if floor_num < 4 or random.random() > 0.25:
+    if floor_num < 4 or random.random() > B["puzzle_floor_chance"]:
         return
     if len(gs.rooms) < 4:
         return
@@ -507,7 +537,7 @@ def _place_vignettes(gs: GameState, floor_num: int) -> None:
 
 
 def _place_npcs(gs: GameState, floor_num: int) -> None:
-    if floor_num < 2 or random.random() > 0.30:
+    if floor_num < 2 or random.random() > B["npc_spawn_chance"]:
         return
     if not gs.rooms or len(gs.rooms) < 3:
         return
@@ -561,7 +591,7 @@ def _place_enchant_anvil(gs: GameState, floor_num: int) -> None:
 
 
 def _place_fountain(gs: GameState, floor_num: int) -> None:
-    if random.random() > 0.4:
+    if random.random() > B["fountain_spawn_chance"]:
         return
     if not gs.rooms or len(gs.rooms) < 2:
         return
@@ -578,9 +608,9 @@ def _place_fountain(gs: GameState, floor_num: int) -> None:
 
 
 def _place_secret_room(gs: GameState, floor_num: int) -> None:
-    if floor_num < 3:
+    if floor_num < B["secret_room_min_floor"]:
         return
-    if random.random() > 0.20:
+    if random.random() > B["secret_room_chance"]:
         return
     if not gs.rooms or len(gs.rooms) < 3:
         return
@@ -624,13 +654,13 @@ def _place_secret_room(gs: GameState, floor_num: int) -> None:
         cx, cy = sx + 1, sy + 1
         tier = min(floor_num // 3, len(WEAPON_TYPES) - 1)
         loot_roll = random.random()
-        if loot_roll < 0.4:
+        if loot_roll < B["secret_room_weapon_chance"]:
             wt = WEAPON_TYPES[min(tier + 1, len(WEAPON_TYPES) - 1)]
             item = Item(cx, cy, "weapon", wt["name"], dict(wt))
             item.identified = True
             gs.items.append(item)
-        elif loot_roll < 0.7:
-            amt = random.randint(50, 150) * max(1, floor_num // 3)
+        elif loot_roll < B["secret_room_weapon_chance"] + B["secret_room_gold_chance"]:
+            amt = random.randint(B["secret_room_gold_min"], B["secret_room_gold_max"]) * max(1, floor_num // 3)
             gs.items.append(Item(cx, cy, "gold", 0, {"amount": amt, "name": f"{amt} gold"}))
         else:
             at = ARMOR_TYPES[min(tier + 1, len(ARMOR_TYPES) - 1)]

@@ -8,35 +8,64 @@ from __future__ import annotations
 
 import curses
 from collections import deque
-from typing import Any, TYPE_CHECKING
+from typing import TYPE_CHECKING, Any
 
 if TYPE_CHECKING:
-    from .game import GameState
     from .agent import AgentPlayer
+    from .game import GameState
 
+from .combat import *
+from .combat import (
+    _award_kill,
+    _bestiary_record,
+    _chase_move,
+    _check_levelups,
+    _check_traps_on_move,
+    _compute_noise,
+    _disarm_trap,
+    _flee_move,
+    _passive_trap_detect,
+    _search_for_traps,
+    _stealth_detection,
+    _trigger_trap,
+    _try_enemy_move,
+    _update_boss_phase,
+)
 from .constants import *
 from .constants import _CHALLENGE_MODES, _DIR_MAP
 from .entities import *
-from .entities import _unlock_next_spell, _unlock_next_ability
-from .mapgen import *
-from .mapgen import _has_los, compute_fov, astar
-from .combat import *
-from .combat import (_bestiary_record, _award_kill, _check_levelups, _trigger_trap,
-                     _check_traps_on_move, _passive_trap_detect, _search_for_traps,
-                     _disarm_trap, _compute_noise, _stealth_detection, _update_boss_phase,
-                     _try_enemy_move, _flee_move, _chase_move)
+from .entities import _unlock_next_ability, _unlock_next_spell
 from .items import *
-from .items import (_get_direction_delta, _animate_projectile, _launch_projectile,
-                    _apply_spell_resist, _cast_spell, _execute_ability,
-                    _journal_potion_desc, _journal_scroll_desc, _toggle_switch,
-                    _interact_pedestal, _interact_npc, _process_branch_effects)
-from .ui import *
-from .ui import (_draw_tile, _inv_letter, _inv_key_to_idx, _describe_tile, _bfs_unexplored)
+from .items import (
+    _animate_projectile,
+    _apply_spell_resist,
+    _cast_spell,
+    _execute_ability,
+    _get_direction_delta,
+    _interact_npc,
+    _interact_pedestal,
+    _journal_potion_desc,
+    _journal_scroll_desc,
+    _launch_projectile,
+    _process_branch_effects,
+    _toggle_switch,
+)
+from .mapgen import *
+from .mapgen import _has_los, astar, compute_fov
 from .persistence import *
-from .persistence import (_default_lifetime_stats, _compute_checksum,
-                          _serialize_item, _serialize_item_on_ground, _serialize_enemy,
-                          _deserialize_item, _deserialize_item_ground, _deserialize_enemy,
-                          _format_lifetime_stats_lines)
+from .persistence import (
+    _compute_checksum,
+    _default_lifetime_stats,
+    _deserialize_enemy,
+    _deserialize_item,
+    _deserialize_item_ground,
+    _format_lifetime_stats_lines,
+    _serialize_enemy,
+    _serialize_item,
+    _serialize_item_on_ground,
+)
+from .ui import *
+from .ui import _bfs_unexplored, _describe_tile, _draw_tile, _inv_key_to_idx, _inv_letter
 
 
 def _get_game() -> Any:

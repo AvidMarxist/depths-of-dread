@@ -16,26 +16,71 @@ from __future__ import annotations
 
 # Allow running directly: python3 src/depths_of_dread/game.py
 if __name__ == "__main__" and __package__ is None:
-    import sys as _sys, os as _os
+    import os as _os
+    import sys as _sys
     _src = _os.path.dirname(_os.path.dirname(_os.path.abspath(__file__)))
     if _src not in _sys.path:
         _sys.path.insert(0, _src)
     __package__ = "depths_of_dread"
 
-import curses
-import random
-import time
-import sys
-import os
-from collections import deque
 import argparse
-from typing import Any, TYPE_CHECKING
+import curses
+import os
+import random
+import sys
+import time
+from collections import deque
+from typing import TYPE_CHECKING, Any
 
 if TYPE_CHECKING:
     from .entities import Item, Player, ShopItem
     from .persistence import SessionRecorder
 
-from .exceptions import RecordingError
+from .agent import (
+    AgentPlayer,
+    agent_batch_mode,
+    agent_game_loop,
+)
+from .agent_ui import FeatureTracker
+
+# --- Bot / Agent ---
+from .bot import (
+    BotPlayer,
+    _bot_execute_action,
+    _update_explored_from_fov,
+    bot_batch_mode,
+    bot_game_loop,
+)
+
+# --- Combat ---
+from .combat import (
+    _ambush_move,
+    _award_kill,
+    _bestiary_record,
+    _chase_move,
+    _check_levelups,
+    _check_traps_on_move,
+    _compute_noise,
+    _disarm_trap,
+    _erratic_move,
+    _flee_move,
+    _mimic_move,
+    _mind_flayer_move,
+    _pack_move,
+    _passive_trap_detect,
+    _patrol_move,
+    _phase_move,
+    _ranged_move,
+    _search_for_traps,
+    _stealth_detection,
+    _summoner_move,
+    _trigger_trap,
+    _try_enemy_move,
+    _update_boss_phase,
+    enemy_attack,
+    process_enemies,
+    sound_alert,
+)
 
 # --- Constants (data layer — wildcard import is intentional) ---
 from .constants import *  # noqa: F403 — constants are the shared data layer
@@ -43,82 +88,121 @@ from .constants import _CHALLENGE_MODES, _DIR_MAP
 
 # --- Entities ---
 from .entities import (
-    Item, Enemy, Player, ShopItem,
-    show_levelup_choice, auto_apply_levelup,
-    generate_levelup_choices, apply_levelup_choice,
-    _unlock_next_spell, _unlock_next_ability,
+    Enemy,
+    Item,
+    Player,
+    ShopItem,
+    _unlock_next_ability,
+    _unlock_next_spell,
+    apply_levelup_choice,
+    auto_apply_levelup,
+    generate_levelup_choices,
+    show_levelup_choice,
 )
-
-# --- Map generation ---
-from .mapgen import (
-    BSPNode, generate_dungeon, compute_fov, astar,
-    flood_fill_count, count_walkable,
-    _has_los, _cast_light, _carve_room_shape, _carve_corridor,
-    _add_cave_features, _generate_fallback, _MULT,
-)
+from .exceptions import RecordingError
 
 # --- Floor generation (extracted from GameState) ---
 from .floor_gen import generate_floor
 
-# --- Combat ---
-from .combat import (
-    sound_alert, enemy_attack, process_enemies,
-    _bestiary_record, _award_kill, _check_levelups, _trigger_trap,
-    _check_traps_on_move, _passive_trap_detect, _search_for_traps,
-    _disarm_trap, _compute_noise, _stealth_detection, _update_boss_phase,
-    _try_enemy_move, _flee_move, _chase_move, _erratic_move, _patrol_move,
-    _pack_move, _ambush_move, _ranged_move, _summoner_move, _mimic_move,
-    _phase_move, _mind_flayer_move,
-)
-
 # --- Items & abilities ---
 from .items import (
-    player_move, player_attack, process_status,
-    pray_at_shrine, use_class_ability, use_alchemy_table,
-    enchant_weapon_headless, fire_projectile, fire_projectile_headless,
-    cast_spell_menu, cast_spell_headless, use_technique_menu,
-    use_potion, use_scroll, use_food, use_ability_headless,
+    _animate_projectile,
+    _apply_spell_resist,
+    _cast_spell,
+    _execute_ability,
+    _get_direction_delta,
+    _interact_npc,
+    _interact_pedestal,
+    _journal_potion_desc,
+    _journal_scroll_desc,
+    _launch_projectile,
+    _process_branch_effects,
+    _toggle_switch,
+    cast_spell_headless,
+    cast_spell_menu,
+    enchant_weapon_headless,
+    fire_projectile,
+    fire_projectile_headless,
+    player_attack,
+    player_move,
+    pray_at_shrine,
+    process_status,
     show_journal,
-    _get_direction_delta, _animate_projectile, _launch_projectile,
-    _apply_spell_resist, _cast_spell, _execute_ability,
-    _journal_potion_desc, _journal_scroll_desc, _toggle_switch,
-    _interact_pedestal, _interact_npc, _process_branch_effects,
+    use_ability_headless,
+    use_alchemy_table,
+    use_class_ability,
+    use_food,
+    use_potion,
+    use_scroll,
+    use_technique_menu,
 )
 
-# --- UI / rendering ---
-from .ui import (
-    render_game, show_title, show_inventory, show_character,
-    show_help, show_messages, show_bestiary, show_shop,
-    look_mode, rest_until_healed, check_context_tips,
-    show_enhanced_victory, show_enhanced_death,
-    auto_fight_step, auto_explore_step, calculate_score,
-    _draw_tile, _inv_letter, _inv_key_to_idx, _describe_tile, _bfs_unexplored,
+# --- Map generation ---
+from .mapgen import (
+    _MULT,
+    BSPNode,
+    _add_cave_features,
+    _carve_corridor,
+    _carve_room_shape,
+    _cast_light,
+    _generate_fallback,
+    _has_los,
+    astar,
+    compute_fov,
+    count_walkable,
+    flood_fill_count,
+    generate_dungeon,
 )
 
 # --- Persistence ---
 from .persistence import (
-    save_game, load_game, save_exists, delete_save,
-    load_lifetime_stats, save_lifetime_stats, show_lifetime_stats,
-    SessionRecorder, list_recordings, replay_session,
-    check_meta_unlocks, apply_meta_unlocks,
-    _default_lifetime_stats, _compute_checksum,
-    _serialize_item, _serialize_item_on_ground, _serialize_enemy,
-    _deserialize_item, _deserialize_item_ground, _deserialize_enemy,
+    SessionRecorder,
+    _compute_checksum,
+    _default_lifetime_stats,
+    _deserialize_enemy,
+    _deserialize_item,
+    _deserialize_item_ground,
     _format_lifetime_stats_lines,
+    _serialize_enemy,
+    _serialize_item,
+    _serialize_item_on_ground,
+    apply_meta_unlocks,
+    check_meta_unlocks,
+    delete_save,
+    list_recordings,
+    load_game,
+    load_lifetime_stats,
+    replay_session,
+    save_exists,
+    save_game,
+    save_lifetime_stats,
+    show_lifetime_stats,
 )
 
-# --- Bot / Agent ---
-from .bot import (
-    BotPlayer,
-    bot_game_loop, bot_batch_mode,
-    _bot_execute_action, _update_explored_from_fov,
+# --- UI / rendering ---
+from .ui import (
+    _bfs_unexplored,
+    _describe_tile,
+    _draw_tile,
+    _inv_key_to_idx,
+    _inv_letter,
+    auto_explore_step,
+    auto_fight_step,
+    calculate_score,
+    check_context_tips,
+    look_mode,
+    render_game,
+    rest_until_healed,
+    show_bestiary,
+    show_character,
+    show_enhanced_death,
+    show_enhanced_victory,
+    show_help,
+    show_inventory,
+    show_messages,
+    show_shop,
+    show_title,
 )
-from .agent import (
-    AgentPlayer,
-    agent_game_loop, agent_batch_mode,
-)
-from .agent_ui import FeatureTracker
-
 
 # ============================================================
 # GAME STATE
@@ -472,13 +556,14 @@ def _cmd_interact(gs: GameState, scr: Any) -> bool | None:
         return _interact_pedestal(gs, px, py)
     elif gs.tiles[py][px] == T_FOUNTAIN:
         p = gs.player
-        heal = random.randint(15, 30)
+        heal = random.randint(B["fountain_heal_min"], B["fountain_heal_max"])
         p.hp = min(p.max_hp, p.hp + heal)
         gs.msg(f"You drink from the fountain. Refreshing! (+{heal} HP)", C_WATER)
-        if random.random() < 0.10:
-            p.max_hp += 1
-            p.hp = min(p.max_hp, p.hp + 1)
-            gs.msg("Blessed water! You feel permanently stronger! (+1 max HP)", C_YELLOW)
+        if random.random() < B["fountain_max_hp_chance"]:
+            bonus = B["fountain_max_hp_bonus"]
+            p.max_hp += bonus
+            p.hp = min(p.max_hp, p.hp + bonus)
+            gs.msg(f"Blessed water! You feel permanently stronger! (+{bonus} max HP)", C_YELLOW)
         p.fountains_used += 1
         gs.tiles[py][px] = T_FLOOR
         return True
