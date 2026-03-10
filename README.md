@@ -24,7 +24,8 @@ Built entirely in Python with zero external dependencies. Runs in any terminal.
 | **Interactive** | `python3 dungeon.py` | You play the game |
 | **Bot** | `python3 dungeon.py --bot` | Decision-tree AI plays (instant) |
 | **Agent** | `python3 dungeon.py --agent` | Claude Haiku-powered AI plays with split-screen decision panel |
-| **Batch** | `python3 dungeon.py --bot --games 10` | Run N headless games for testing |
+| **Batch** | `python3 dungeon.py --bot --games 10` | Run N headless games for testing (class rotation) |
+| **Batch JSON** | `python3 dungeon.py --bot --games 10 --json` | Structured JSON output for trend tracking |
 | **Agent Batch** | `python3 dungeon.py --agent --games 6` | Run N Claude-powered games (2 per class rotation) |
 
 In Agent mode, press **Shift+P** to enter **Pilot Mode** — take manual control, unstick the AI, guide it through puzzles, then release back.
@@ -34,7 +35,7 @@ In Agent mode, press **Shift+P** to enter **Pilot Mode** — take manual control
 ## Features
 
 ### Core
-- BSP dungeon generation with 15 themed floors
+- BSP dungeon generation with 20 themed floors
 - Shadowcasting field-of-view with fog of war
 - A* pathfinding for enemies and auto-explore
 - Permadeath with save/load (checksum-protected)
@@ -91,6 +92,8 @@ In Agent mode, press **Shift+P** to enter **Pilot Mode** — take manual control
 - **Wall torches** — grab for torch fuel
 - **Difficulty modes** — easy, normal, hard (--difficulty flag)
 - **Mana potions** — restore MP for spell-dependent builds
+- **256-color palettes** — 19 themed floor palettes with automatic fallback to 16-color
+- **Unicode tiles** — rich glyphs (█ walls, · floors, ≈ water, ▼▲ stairs) with ASCII fallback
 
 ---
 
@@ -245,8 +248,14 @@ python3 -m pytest tests/
 # Built-in tests (dungeon connectivity, enemy spawning, item generation)
 python3 src/depths_of_dread/game.py --test
 
-# Bot batch (stress test)
+# Bot batch (stress test, auto class rotation)
 python3 src/depths_of_dread/game.py --bot --games 10
+
+# Bot batch with JSON output (for trend tracking)
+python3 src/depths_of_dread/game.py --bot --games 10 --json > results.json
+
+# Bot batch, single class
+python3 src/depths_of_dread/game.py --bot --games 10 --class warrior
 
 # Agent batch (requires Claude CLI)
 python3 src/depths_of_dread/game.py --agent --games 6
@@ -270,16 +279,16 @@ python3 src/depths_of_dread/game.py --dark      # Reduced FOV
 ```
 depths-of-dread/
   src/depths_of_dread/
-    game.py          # Game loop, GameState, command dispatch (~1,000 lines)
-    constants.py     # All balance tuning, enemy/item/spell definitions (~900 lines)
-    bot.py           # BotPlayer decision-tree AI (~900 lines)
-    agent.py         # AgentPlayer Claude-powered hybrid AI (~1,300 lines)
-    agent_ui.py      # Agent mode UI: split panel, pilot mode, FeatureTracker (~360 lines)
-    items.py         # Item usage, spells, player actions (~1,690 lines)
-    ui.py            # Rendering, inventory, character sheet, menus (~1,580 lines)
+    game.py          # Game loop, GameState, command dispatch (~1,090 lines)
+    constants.py     # All balance tuning, enemy/item/spell/theme definitions (~1,180 lines)
+    bot.py           # BotPlayer decision-tree AI + batch mode (~1,050 lines)
+    agent.py         # AgentPlayer Claude-powered hybrid AI (~1,350 lines)
+    agent_ui.py      # Agent mode UI: split panel, pilot mode, FeatureTracker (~390 lines)
+    items.py         # Item usage, spells, player actions (~1,700 lines)
+    ui.py            # Rendering, inventory, character sheet, menus (~1,640 lines)
     combat.py        # Combat resolution, enemy AI, status effects (~1,070 lines)
     persistence.py   # Save/load, session recording, replay (~770 lines)
-    floor_gen.py     # Floor generation, enemy/item/feature population (~680 lines)
+    floor_gen.py     # Floor generation, enemy/item/feature population (~710 lines)
     entities.py      # Player, Enemy, Item, ShopItem classes (~450 lines)
     mapgen.py        # BSP dungeon generation, FOV, A* pathfinding (~430 lines)
     exceptions.py    # Custom exception hierarchy (~30 lines)
@@ -303,7 +312,7 @@ depths-of-dread/
   LICENSE            # MIT
 ```
 
-~11,600 lines of source across 13 modules. 474 tests across 10 test files. Zero external dependencies — just Python's standard library and a terminal.
+~11,900 lines of source across 13 modules. 474 tests across 10 test files. Zero external dependencies — just Python's standard library and a terminal.
 
 ---
 

@@ -1,7 +1,7 @@
 # Depths of Dread — Code Quality Audit
 
 **Date:** 2026-03-08 (initial) | **Updated:** 2026-03-10
-**Codebase:** 11,582 source lines | 6,328 test lines | 13 source modules | 474 tests across 10 test files
+**Codebase:** ~11,900 source lines | 6,328 test lines | 13 source modules | 474 tests across 10 test files
 
 ---
 
@@ -9,7 +9,7 @@
 
 Depths of Dread is a well-structured Python roguelike with strong fundamentals: clean layered architecture, zero circular dependencies, comprehensive test coverage across all ISO 25010 dimensions, and a solid data-driven design.
 
-**Update (Mar 10):** Two refactoring passes addressed all Tier 1 and Tier 2 issues from the original audit. The codebase now has full type hint coverage, dispatch patterns replacing all oversized if/elif chains, a custom exception hierarchy, extracted modules (bot → bot/agent/agent_ui, GameState → floor_gen), per-module test files, 93 magic numbers extracted into BALANCE dict, and ruff + mypy running clean. The code quality score has improved significantly.
+**Update (Mar 10):** Two refactoring passes addressed all Tier 1 and Tier 2 issues from the original audit. The codebase now has full type hint coverage, dispatch patterns replacing all oversized if/elif chains, a custom exception hierarchy, extracted modules (bot → bot/agent/agent_ui, GameState → floor_gen), per-module test files, 93 magic numbers extracted into BALANCE dict, and ruff + mypy running clean. Visual upgrade: 256-color themed palettes (19 floor themes) with unicode tile characters and automatic fallback. Bot improvements: puzzle-solving AI for locked stairs, structured JSON batch output.
 
 ### Scorecard
 
