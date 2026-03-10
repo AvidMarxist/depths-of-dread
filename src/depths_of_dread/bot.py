@@ -416,6 +416,13 @@ class BotPlayer:
             self.target_desc = "praying"
             return ("pray", {})
 
+        # Solve puzzle if stairs are locked (any time, not just late-game)
+        stx, sty = gs.stair_down
+        if gs.explored[sty][stx] and gs.tiles[sty][stx] == T_STAIRS_LOCKED:
+            result = self._solve_puzzle(gs)
+            if result:
+                return result
+
         # Descend stairs when floor is explored enough
         if gs.tiles[p.y][p.x] == T_STAIRS_DOWN:
             explored_pct = self._floor_explored_pct(gs)
@@ -434,10 +441,10 @@ class BotPlayer:
                     self.target_desc = "urgently seeking stairs"
                     return ("move", {"dx": step[0], "dy": step[1]})
             elif gs.tiles[sy][sx] == T_STAIRS_LOCKED:
-                # Stairs are locked — keep exploring (walk on switches naturally)
-                self.strategy = "EXPLORE"
-                self.target_desc = "stairs locked, exploring"
-                # Don't try to pathfind to locked stairs
+                # Stairs locked — find and step on unactivated switches
+                result = self._solve_puzzle(gs)
+                if result:
+                    return result
 
         # Auto-explore with committed target (prevents oscillation)
         # Invalidate target if we reached it or it's now explored
@@ -582,6 +589,44 @@ class BotPlayer:
                     self.strategy = "EQUIP"
                     self.target_desc = item.display_name
                     return ("equip", {"item": item})
+        return None
+
+    def _solve_puzzle(self, gs: GameState) -> tuple[str, dict[str, Any]] | None:
+        """Find unsolved puzzle switches and pathfind to the nearest T_SWITCH_OFF."""
+        p = gs.player
+        # Find all switch positions from unsolved puzzles
+        switch_targets: list[tuple[int, int]] = []
+        for puzzle in gs.puzzles:
+            if puzzle["solved"]:
+                continue
+            if puzzle["type"] in ("switch", "locked_stairs"):
+                for px, py in puzzle["positions"]:
+                    if gs.tiles[py][px] == T_SWITCH_OFF:
+                        switch_targets.append((px, py))
+            elif puzzle["type"] == "pressure":
+                activated = puzzle.get("activated", [])
+                for px, py in puzzle["positions"]:
+                    if (px, py) not in activated:
+                        switch_targets.append((px, py))
+
+        if not switch_targets:
+            # No known switches — also scan the map for any T_SWITCH_OFF tiles
+            for my in range(MAP_H):
+                for mx in range(MAP_W):
+                    if gs.explored[my][mx] and gs.tiles[my][mx] == T_SWITCH_OFF:
+                        switch_targets.append((mx, my))
+
+        if not switch_targets:
+            return None
+
+        # Sort by distance, try pathfinding to nearest
+        switch_targets.sort(key=lambda t: abs(t[0] - p.x) + abs(t[1] - p.y))
+        for tx, ty in switch_targets:
+            step = astar(gs.tiles, p.x, p.y, tx, ty, max_steps=80)
+            if step:
+                self.strategy = "PUZZLE"
+                self.target_desc = f"switch at ({tx},{ty})"
+                return ("move", {"dx": step[0], "dy": step[1]})
         return None
 
     def _floor_explored_pct(self, gs: GameState) -> float:
@@ -819,12 +864,14 @@ def bot_game_loop(scr: Any, speed: float = 0.08, max_turns: int = 5000) -> None:
         scr.getch()
 
 
-def bot_batch_mode(num_games: int = 10, player_class: str | None = None) -> list[dict[str, Any]]:
+def bot_batch_mode(num_games: int = 10, player_class: str | None = None,
+                   json_output: bool = False) -> list[dict[str, Any]]:
     """Run multiple bot games headless and print summary stats.
 
     Args:
         num_games: Number of games to play.
         player_class: Force a class ("warrior"/"mage"/"rogue") or None for rotation.
+        json_output: If True, print results as JSON to stdout instead of human-readable text.
     """
     CLASSES: list[str] = ["warrior", "mage", "rogue"]
     results: list[dict[str, Any]] = []
@@ -885,7 +932,11 @@ def bot_batch_mode(num_games: int = 10, player_class: str | None = None) -> list
             flags = ""
             if result["locked_stairs"]:
                 flags += " [LOCKED]"
-            print(f"  Game {i+1:3d}: [{cls_tag}] {status:<12} Lv{p.level} T{gs.turn_count:5d} K{p.kills:3d} Score:{calculate_score(p, gs)}{flags}")
+            progress_line = f"  Game {i+1:3d}: [{cls_tag}] {status:<12} Lv{p.level} T{gs.turn_count:5d} K{p.kills:3d} Score:{calculate_score(p, gs)}{flags}"
+            if json_output:
+                print(progress_line, file=sys.stderr)
+            else:
+                print(progress_line)
 
         except Exception as exc:
             import traceback
@@ -896,9 +947,72 @@ def bot_batch_mode(num_games: int = 10, player_class: str | None = None) -> list
                 "traceback": traceback.format_exc(),
             }
             crashes.append(crash)
-            print(f"  Game {i+1:3d}: [{game_class[0].upper()}] CRASH: {exc}")
+            crash_line = f"  Game {i+1:3d}: [{game_class[0].upper()}] CRASH: {exc}"
+            if json_output:
+                print(crash_line, file=sys.stderr)
+            else:
+                print(crash_line)
 
     # Summary
+    if json_output:
+        _print_batch_json(results, crashes, num_games)
+    else:
+        _print_batch_summary(results, crashes, num_games)
+    return results
+
+
+def _print_batch_json(results: list[dict[str, Any]], crashes: list[dict[str, Any]],
+                      num_games: int) -> None:
+    """Print batch results as structured JSON for trend tracking."""
+    import datetime
+    summary: dict[str, Any] = {
+        "timestamp": datetime.datetime.now().isoformat(),
+        "num_games": num_games,
+        "completed": len(results),
+        "crashed": len(crashes),
+    }
+    if results:
+        wins = sum(1 for r in results if r["victory"])
+        summary["wins"] = wins
+        summary["win_rate"] = round(wins / len(results), 3)
+        summary["avg_floor"] = round(sum(r["floor"] for r in results) / len(results), 1)
+        summary["max_floor"] = max(r["floor"] for r in results)
+        summary["avg_kills"] = round(sum(r["kills"] for r in results) / len(results), 1)
+        summary["avg_turns"] = round(sum(r["turns"] for r in results) / len(results), 0)
+        summary["avg_score"] = round(sum(r["score"] for r in results) / len(results), 0)
+        summary["timeouts"] = sum(1 for r in results if r["death_cause"] == "timeout")
+        summary["locked_stairs"] = sum(1 for r in results if r.get("locked_stairs"))
+        # Per-class breakdown
+        per_class: dict[str, Any] = {}
+        for cls in ["warrior", "mage", "rogue"]:
+            cr = [r for r in results if r["class"] == cls]
+            if cr:
+                per_class[cls] = {
+                    "games": len(cr),
+                    "wins": sum(1 for r in cr if r["victory"]),
+                    "avg_floor": round(sum(r["floor"] for r in cr) / len(cr), 1),
+                    "avg_kills": round(sum(r["kills"] for r in cr) / len(cr), 1),
+                    "avg_score": round(sum(r["score"] for r in cr) / len(cr), 0),
+                }
+        summary["per_class"] = per_class
+        # Death cause distribution
+        causes: dict[str, int] = {}
+        for r in results:
+            c = r["death_cause"]
+            causes[c] = causes.get(c, 0) + 1
+        summary["death_causes"] = causes
+    output = {
+        "summary": summary,
+        "games": results,
+        "crashes": [{"game": c["game"], "class": c["class"], "error": c["error"]}
+                    for c in crashes],
+    }
+    print(json.dumps(output, indent=2))
+
+
+def _print_batch_summary(results: list[dict[str, Any]], crashes: list[dict[str, Any]],
+                         num_games: int) -> None:
+    """Print human-readable batch summary."""
     print("\n" + "=" * 50)
     print("BOT BATCH SUMMARY")
     print("=" * 50)
@@ -915,15 +1029,13 @@ def bot_batch_mode(num_games: int = 10, player_class: str | None = None) -> list
         print(f"  Avg floor: {avg_floor:.1f}  Max floor: {max_floor}  Avg kills: {avg_kills:.1f}")
         print(f"  Avg turns: {avg_turns:.0f}  Avg score: {avg_score:.0f}")
         print(f"  Timeouts: {timeout_count}  Locked stairs encounters: {locked_count}")
-        # Per-class breakdown
-        for cls in CLASSES:
+        for cls in ["warrior", "mage", "rogue"]:
             cls_results = [r for r in results if r["class"] == cls]
             if cls_results:
                 cls_avg_floor = sum(r["floor"] for r in cls_results) / len(cls_results)
                 cls_avg_kills = sum(r["kills"] for r in cls_results) / len(cls_results)
                 print(f"    {cls.capitalize():8s}: {len(cls_results)} games, avg F{cls_avg_floor:.1f}, avg K{cls_avg_kills:.0f}")
-        # Death causes
-        causes = {}
+        causes: dict[str, int] = {}
         for r in results:
             c = r["death_cause"]
             causes[c] = causes.get(c, 0) + 1
@@ -932,4 +1044,3 @@ def bot_batch_mode(num_games: int = 10, player_class: str | None = None) -> list
         print(f"  CRASHES: {len(crashes)}")
         for c in crashes:
             print(f"    Game {c['game']} [{c['class']}]: {c['error']}")
-    return results

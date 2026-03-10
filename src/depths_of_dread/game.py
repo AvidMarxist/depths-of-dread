@@ -1037,6 +1037,7 @@ def _parse_args() -> argparse.Namespace:
     parser.add_argument("--bot", action="store_true", help="Watch AI bot play")
     parser.add_argument("--agent", action="store_true", help="Watch Claude-powered agent play")
     parser.add_argument("--games", type=int, default=0, help="Bot/agent batch mode: run N games headless")
+    parser.add_argument("--json", action="store_true", help="Output batch results as JSON (use with --games)")
     parser.add_argument("--replay", type=str, default="", help="Replay a recorded session")
     parser.add_argument("--speed", type=float, default=1.0, help="Replay/bot speed multiplier")
     parser.add_argument("--recordings", action="store_true", help="List saved recordings")
@@ -1066,7 +1067,8 @@ if __name__ == "__main__":
             curses.wrapper(lambda scr: agent_game_loop(scr, speed=args.speed))
     elif args.bot:
         if args.games > 0:
-            bot_batch_mode(args.games)
+            bot_batch_mode(args.games, player_class=args.player_class,
+                           json_output=args.json)
         else:
             curses.wrapper(lambda scr: bot_game_loop(scr, speed=args.speed))
     elif args.replay:
