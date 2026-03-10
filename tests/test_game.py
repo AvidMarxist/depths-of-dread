@@ -1040,7 +1040,8 @@ class TestPortability:
         stdlib_modules = {
             'curses', 'random', 'math', 'time', 'sys', 'heapq', 'json',
             'hashlib', 'os', 'pathlib', 'collections', 'argparse', 'datetime',
-            'subprocess', 'threading', 'traceback',
+            'subprocess', 'threading', 'traceback', '__future__', 'typing',
+            'types',
         }
         # Optional imports wrapped in try/except are allowed
         optional_modules = {'agent_commons'}

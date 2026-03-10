@@ -4,6 +4,7 @@ Bot / Agent module for Depths of Dread.
 Contains BotPlayer (decision-tree AI), AgentPlayer (Claude-powered),
 FeatureTracker, and game loop functions for bot/agent modes.
 """
+from __future__ import annotations
 
 import curses
 import random
@@ -13,6 +14,12 @@ import json
 import os
 import subprocess
 from collections import deque
+from typing import Any, TYPE_CHECKING
+
+if TYPE_CHECKING:
+    from .game import GameState
+    from .entities import Item, Enemy, Player
+    import io
 
 # Agent-commons: universal agentic testing framework (optional)
 try:
@@ -54,7 +61,7 @@ from .persistence import (_default_lifetime_stats, _compute_checksum,
                           _format_lifetime_stats_lines)
 
 
-def _get_game():
+def _get_game() -> Any:
     from . import game
     return game
 
@@ -64,20 +71,20 @@ def _get_game():
 class BotPlayer:
     """AI bot that plays the game using a priority-based decision tree."""
 
-    def __init__(self):
-        self.strategy = "INIT"
-        self.target_desc = ""
-        self.items_used = 0
-        self.potions_saved = 0
-        self.decisions = 0
-        self._explore_target = None  # Committed exploration target (x, y)
-        self._explore_stuck = 0      # Counter for detecting oscillation
-        self._last_positions = []     # Recent positions for loop detection
-        self._floor_tiles_visited = set()  # Unique tiles visited on current floor
-        self._floor_start_turn = 0         # Turn when we entered this floor
-        self._current_floor = 0            # Track floor for reset
+    def __init__(self) -> None:
+        self.strategy: str = "INIT"
+        self.target_desc: str = ""
+        self.items_used: int = 0
+        self.potions_saved: int = 0
+        self.decisions: int = 0
+        self._explore_target: tuple[int, int] | None = None  # Committed exploration target (x, y)
+        self._explore_stuck: int = 0      # Counter for detecting oscillation
+        self._last_positions: list[tuple[int, int]] = []     # Recent positions for loop detection
+        self._floor_tiles_visited: set[tuple[int, int]] = set()  # Unique tiles visited on current floor
+        self._floor_start_turn: int = 0         # Turn when we entered this floor
+        self._current_floor: int = 0            # Track floor for reset
 
-    def decide(self, gs):
+    def decide(self, gs: GameState) -> tuple[str, dict[str, Any]]:
         """Returns (action, params) tuple. Deterministic given same state."""
         self.decisions += 1
         p = gs.player
@@ -424,13 +431,13 @@ class BotPlayer:
         self.target_desc = "waiting"
         return ("rest", {})
 
-    def _enemies_visible(self, gs):
+    def _enemies_visible(self, gs: GameState) -> bool:
         return any(e.is_alive() and (e.x, e.y) in gs.visible and not e.disguised for e in gs.enemies)
 
-    def _nearest_visible_enemy(self, gs):
+    def _nearest_visible_enemy(self, gs: GameState) -> Enemy | None:
         p = gs.player
-        nearest = None
-        nd = 999
+        nearest: Enemy | None = None
+        nd: int = 999
         for e in gs.enemies:
             if e.is_alive() and (e.x, e.y) in gs.visible:
                 d = abs(e.x - p.x) + abs(e.y - p.y)
@@ -439,7 +446,7 @@ class BotPlayer:
                     nearest = e
         return nearest
 
-    def _flee_direction(self, gs):
+    def _flee_direction(self, gs: GameState) -> tuple[int, int] | None:
         """Move away from nearest enemy."""
         p = gs.player
         nearest = self._nearest_visible_enemy(gs)
@@ -459,7 +466,7 @@ class BotPlayer:
                     return (ddx, ddy)
         return None
 
-    def _check_equipment_upgrade(self, gs):
+    def _check_equipment_upgrade(self, gs: GameState) -> tuple[str, dict[str, Any]] | None:
         """Check if we have better unequipped gear."""
         p = gs.player
         for item in p.inventory:
@@ -487,13 +494,13 @@ class BotPlayer:
                     return ("equip", {"item": item})
         return None
 
-    def _floor_explored_pct(self, gs):
+    def _floor_explored_pct(self, gs: GameState) -> float:
         explored = sum(1 for row in gs.explored for c in row if c)
         total = count_walkable(gs.tiles)
         return explored / total if total > 0 else 1.0
 
 
-def _update_explored_from_fov(gs):
+def _update_explored_from_fov(gs: GameState) -> None:
     """Mark all visible tiles as explored (needed for headless/bot mode)."""
     for (mx, my) in gs.visible:
         if 0 <= mx < MAP_W and 0 <= my < MAP_H:
@@ -507,8 +514,8 @@ def _update_explored_from_fov(gs):
 class FeatureTracker:
     """Track which game features the agent encounters and interacts with."""
 
-    def __init__(self):
-        self.features = {
+    def __init__(self) -> None:
+        self.features: dict[str, dict[str, Any]] = {
             "puzzle_torch": {"encountered": False, "solved": False},
             "puzzle_switch": {"encountered": False, "solved": False},
             "puzzle_locked": {"encountered": False, "solved": False},
@@ -521,11 +528,11 @@ class FeatureTracker:
             "shrine": {"encountered": False, "prayed": False},
             "wand_used": {"used": False},
         }
-        self.classes_played = set()
-        self.spells_cast = set()
-        self.abilities_used = set()
+        self.classes_played: set[str] = set()
+        self.spells_cast: set[str] = set()
+        self.abilities_used: set[str] = set()
 
-    def check_state(self, gs, action_str=""):
+    def check_state(self, gs: GameState, action_str: str = "") -> None:
         """Call every turn to update tracking."""
         p = gs.player
         tile = gs.tiles[p.y][p.x]
@@ -569,7 +576,7 @@ class FeatureTracker:
             if 0 <= nx < MAP_W and 0 <= ny < MAP_H and gs.tiles[ny][nx] == T_SHOP_FLOOR:
                 self.features["shop"]["encountered"] = True
 
-    def coverage_pct(self):
+    def coverage_pct(self) -> float:
         """Return overall feature coverage as a percentage."""
         total = 0
         covered = 0
@@ -581,7 +588,7 @@ class FeatureTracker:
                         covered += 1
         return covered / total if total > 0 else 0
 
-    def report(self):
+    def report(self) -> str:
         """Return human-readable feature coverage report."""
         lines = ["FEATURE COVERAGE REPORT", "=" * 40]
         for key, val in sorted(self.features.items()):
@@ -605,38 +612,38 @@ class FeatureTracker:
 class AgentPlayer:
     """Hybrid AI: BotPlayer for routine turns, Claude (Haiku) for tactical decisions."""
 
-    def __init__(self, game_id=1):
-        self.bot = BotPlayer()  # Fallback for non-triggered turns
-        self.strategy = "INIT"
-        self.target_desc = ""
-        self.reason = ""        # Last Claude reasoning
-        self.claude_calls = 0
-        self.total_latency = 0.0
-        self.fallbacks = 0
-        self.items_used = 0
-        self._thinking = False   # True while waiting for Claude
-        self._last_floor = 0
-        self._last_call_latency = 0.0  # Latency of most recent Claude call
-        self._consulted_shop = False    # Only consult Claude about shop once per floor
-        self._consulted_shrine = False  # Only consult Claude about shrine once per floor
-        self._consulted_locked_stairs = False
-        self._seen_wall_torch = False
-        self._last_consult_turn = 0     # Cooldown: min turns between non-critical calls
-        self._last_state_hash = None    # State dedup: skip if unchanged
+    def __init__(self, game_id: int = 1) -> None:
+        self.bot: BotPlayer = BotPlayer()  # Fallback for non-triggered turns
+        self.strategy: str = "INIT"
+        self.target_desc: str = ""
+        self.reason: str = ""        # Last Claude reasoning
+        self.claude_calls: int = 0
+        self.total_latency: float = 0.0
+        self.fallbacks: int = 0
+        self.items_used: int = 0
+        self._thinking: bool = False   # True while waiting for Claude
+        self._last_floor: int = 0
+        self._last_call_latency: float = 0.0  # Latency of most recent Claude call
+        self._consulted_shop: bool = False    # Only consult Claude about shop once per floor
+        self._consulted_shrine: bool = False  # Only consult Claude about shrine once per floor
+        self._consulted_locked_stairs: bool = False
+        self._seen_wall_torch: bool = False
+        self._last_consult_turn: int = 0     # Cooldown: min turns between non-critical calls
+        self._last_state_hash: int | None = None    # State dedup: skip if unchanged
         # --- Health monitoring ---
-        self._health_interval = 10          # Check every N turns
-        self._health_warnings = []          # Accumulated warnings
-        self._window_calls = 0              # Claude calls in current window
-        self._window_start_turn = 0         # Turn at start of current window
-        self._floor_start_turn = 0          # Turn when current floor started
-        self._action_window = deque(maxlen=20)  # Recent actions for distribution check
-        self._hp_samples = deque(maxlen=10)     # Recent HP readings for trend
-        self._trigger_counts = {}           # Track what's triggering Claude calls
+        self._health_interval: int = 10          # Check every N turns
+        self._health_warnings: list[str] = []          # Accumulated warnings
+        self._window_calls: int = 0              # Claude calls in current window
+        self._window_start_turn: int = 0         # Turn at start of current window
+        self._floor_start_turn: int = 0          # Turn when current floor started
+        self._action_window: deque[str] = deque(maxlen=20)  # Recent actions for distribution check
+        self._hp_samples: deque[int] = deque(maxlen=10)     # Recent HP readings for trend
+        self._trigger_counts: dict[str, int] = {}           # Track what's triggering Claude calls
         # --- Stuck detection ---
-        self._position_history = deque(maxlen=20)  # Last 20 positions
-        self._last_stuck_turn = 0                  # Turn when last stuck trigger fired
-        self._game_id = game_id
-        self._log_file = None
+        self._position_history: deque[tuple[int, int]] = deque(maxlen=20)  # Last 20 positions
+        self._last_stuck_turn: int = 0                  # Turn when last stuck trigger fired
+        self._game_id: int = game_id
+        self._log_file: io.TextIOWrapper | None = None
         # --- Agent-commons integration ---
         if HAS_AGENT_COMMONS:
             log_dir = os.path.expanduser("~/.depths_of_dread_agent_traces")
@@ -669,12 +676,12 @@ class AgentPlayer:
         else:
             self._ac_trace = None
 
-    def _open_log(self):
+    def _open_log(self) -> None:
         """Open the agent log file for real-time JSONL streaming."""
         if self._log_file is None:
             self._log_file = open(AGENT_LOG_PATH, 'a')
 
-    def _log(self, event_type, data=None):
+    def _log(self, event_type: str, data: dict[str, Any] | None = None) -> None:
         """Write a JSONL event to the agent log (flushed immediately)."""
         self._open_log()
         entry = {
@@ -687,13 +694,13 @@ class AgentPlayer:
         self._log_file.write(json.dumps(entry) + "\n")
         self._log_file.flush()
 
-    def close_log(self):
+    def close_log(self) -> None:
         """Close the log file."""
         if self._log_file:
             self._log_file.close()
             self._log_file = None
 
-    def _serialize_state(self, gs):
+    def _serialize_state(self, gs: GameState) -> str:
         """Compact game state text for Claude (~300 chars target)."""
         p = gs.player
         hp_pct = int(p.hp / p.max_hp * 100) if p.max_hp > 0 else 0
@@ -799,17 +806,17 @@ class AgentPlayer:
             line += f"\n!! STUCK — repeating positions {recent}. Try a NEW direction or teleport."
         return line
 
-    def _state_hash(self, gs):
+    def _state_hash(self, gs: GameState) -> int:
         """Quick hash of game state for dedup."""
         p = gs.player
         enemies = tuple(sorted((e.x, e.y, e.hp) for e in gs.enemies
                                if e.is_alive() and (e.x, e.y) in gs.visible))
         return hash((p.x, p.y, p.hp, p.mana, int(p.hunger), p.floor, enemies))
 
-    def _should_consult(self, gs):
+    def _should_consult(self, gs: GameState) -> bool:
         """Check if this turn warrants a Claude call. Tracks trigger reasons for health monitoring."""
         p = gs.player
-        reason = None
+        reason: str | None = None
 
         # Enemies visible — combat decisions
         if self.bot._enemies_visible(gs):
@@ -910,7 +917,7 @@ class AgentPlayer:
         return False
 
     # --- Health monitoring baselines ---
-    HEALTH_BASELINES = {
+    HEALTH_BASELINES: dict[str, float] = {
         "calls_per_turn_max": 0.5,       # Expected: ~0.3, alert if >0.5 sustained
         "fallback_rate_max": 0.25,        # Expected: <10%, alert if >25%
         "avg_latency_max": 15.0,          # Expected: ~5-8s, alert if >15s
@@ -919,10 +926,10 @@ class AgentPlayer:
         "hp_loss_no_enemies_max": 5,      # Alert if losing HP with no visible enemies (per window)
     }
 
-    def _health_check(self, gs):
+    def _health_check(self, gs: GameState) -> list[str]:
         """Run every _health_interval turns. Compares runtime metrics against baselines.
         Logs warnings and returns list of active warnings."""
-        warnings = []
+        warnings: list[str] = []
         turn = gs.turn_count
         window_turns = turn - self._window_start_turn
 
@@ -987,10 +994,10 @@ class AgentPlayer:
         self._health_warnings = warnings
         return warnings
 
-    def _post_game_report(self, gs):
+    def _post_game_report(self, gs: GameState) -> dict[str, Any]:
         """Post-game health summary. Call after game ends. Returns dict of metrics + flags."""
         p = gs.player
-        report = {
+        report: dict[str, Any] = {
             "turns": gs.turn_count,
             "floor": p.floor,
             "kills": p.kills,
@@ -1003,7 +1010,7 @@ class AgentPlayer:
             "warnings_total": len(self._health_warnings),
         }
         # Flag anomalies
-        flags = []
+        flags: list[str] = []
         if report["calls_per_turn"] > self.HEALTH_BASELINES["calls_per_turn_max"]:
             flags.append(f"HIGH calls/turn: {report['calls_per_turn']:.2f}")
         if report["fallback_rate"] > self.HEALTH_BASELINES["fallback_rate_max"]:
@@ -1065,7 +1072,7 @@ class AgentPlayer:
 
         return report
 
-    def _call_claude(self, state_text):
+    def _call_claude(self, state_text: str) -> dict[str, Any] | None:
         """Call claude via stdin with game state, return parsed action dict or None.
 
         Uses stdin pipe instead of -p arg to avoid shell escaping issues and
@@ -1157,7 +1164,7 @@ class AgentPlayer:
                 return None
         return None
 
-    def _parse_response(self, raw):
+    def _parse_response(self, raw: str) -> dict[str, Any] | None:
         """Extract action JSON from Claude's response.
 
         Claude --output-format json returns: {"type":"result","result":"..."}
@@ -1200,8 +1207,8 @@ class AgentPlayer:
 
         return None
 
-    def _action_to_command(self, action_str, gs):
-        """Map Claude's action string → (action, params) for _bot_execute_action.
+    def _action_to_command(self, action_str: str, gs: GameState) -> tuple[str, dict[str, Any]] | None:
+        """Map Claude's action string -> (action, params) for _bot_execute_action.
 
         Handles common Claude response variations:
         - 'move north' vs 'move_north'
@@ -1338,7 +1345,7 @@ class AgentPlayer:
 
         return None  # Unparseable
 
-    def _track_coverage(self, gs, action_str=""):
+    def _track_coverage(self, gs: GameState, action_str: str = "") -> None:
         """Track feature coverage events from game state and action."""
         if not HAS_AGENT_COMMONS or self._ac_trace is None:
             return
@@ -1394,8 +1401,8 @@ class AgentPlayer:
         if gs.active_branch:
             cov.mark("entered_branch")
 
-    def decide(self, gs):
-        """Returns (action, params) — consults Claude for tactical decisions, BotPlayer otherwise."""
+    def decide(self, gs: GameState) -> tuple[str, dict[str, Any]]:
+        """Returns (action, params) -- consults Claude for tactical decisions, BotPlayer otherwise."""
         p = gs.player
 
         # Track floor changes for health monitoring
@@ -1524,7 +1531,7 @@ AGENT_PANEL_MIN_W = 50  # Minimum panel width to be useful
 AGENT_SPLIT_MIN_COLS = AGENT_PANEL_X + AGENT_PANEL_MIN_W  # 132 cols needed
 
 
-def _render_agent_panel(scr, agent, gs, decision_log):
+def _render_agent_panel(scr: Any, agent: AgentPlayer, gs: GameState, decision_log: deque[dict[str, Any]]) -> None:
     """Render the split-screen decision panel to the right of the game."""
     term_h, term_w = scr.getmaxyx()
     panel_w = term_w - AGENT_PANEL_X - 1
@@ -1651,7 +1658,7 @@ _PILOT_MOVE_KEYS = {
     ord('b'): (-1,1), ord('n'): (1,1),
 }
 
-def _pilot_process_key(gs, scr, key):
+def _pilot_process_key(gs: GameState, scr: Any, key: int) -> bool:
     """Process a single keypress during pilot mode. Returns True if turn was spent."""
     p = gs.player
     if key in _PILOT_MOVE_KEYS:
@@ -1738,7 +1745,7 @@ def _pilot_process_key(gs, scr, key):
     return False
 
 
-def agent_game_loop(scr, speed=0.15, max_turns=10000):
+def agent_game_loop(scr: Any, speed: float = 0.15, max_turns: int = 10000) -> None:
     """Run a Claude-powered agent game visually in the terminal."""
     curses.curs_set(0)
     scr.nodelay(False)
@@ -1759,8 +1766,8 @@ def agent_game_loop(scr, speed=0.15, max_turns=10000):
     show_panel = True
     paused = False
     delay_ms = max(10, int(speed * 1000))
-    decision_log = deque(maxlen=50)  # Rolling log of Claude decisions
-    pilot_mode = False  # Player takes manual control when True
+    decision_log: deque[dict[str, Any]] = deque(maxlen=50)  # Rolling log of Claude decisions
+    pilot_mode: bool = False  # Player takes manual control when True
 
     while gs.running and not gs.game_over and gs.turn_count < max_turns:
         fov_radius = gs.player.get_torch_radius()
@@ -1908,7 +1915,7 @@ def agent_game_loop(scr, speed=0.15, max_turns=10000):
         scr.getch()
 
 
-def agent_batch_mode(num_games=10, player_class=None):
+def agent_batch_mode(num_games: int = 10, player_class: str | None = None) -> list[dict[str, Any]]:
     """Run multiple agent games headless and print summary stats.
 
     Args:
@@ -1922,11 +1929,11 @@ def agent_batch_mode(num_games=10, player_class=None):
     except OSError:
         pass
 
-    results = []
-    total_claude_calls = 0
-    total_claude_latency = 0.0
-    total_fallbacks = 0
-    batch_tracker = FeatureTracker()
+    results: list[dict[str, Any]] = []
+    total_claude_calls: int = 0
+    total_claude_latency: float = 0.0
+    total_fallbacks: int = 0
+    batch_tracker: FeatureTracker = FeatureTracker()
 
     for i in range(num_games):
         game_class = player_class or CLASSES[i % len(CLASSES)]
@@ -2059,7 +2066,7 @@ def agent_batch_mode(num_games=10, player_class=None):
     return results
 
 
-def _bot_execute_action(gs, action, params):
+def _bot_execute_action(gs: GameState, action: str, params: dict[str, Any]) -> bool:
     """Execute a bot action on the game state. Returns True if turn was spent."""
     p = gs.player
     if action == "move":
@@ -2172,7 +2179,7 @@ def _bot_execute_action(gs, action, params):
     return False
 
 
-def bot_game_loop(scr, speed=0.08, max_turns=5000):
+def bot_game_loop(scr: Any, speed: float = 0.08, max_turns: int = 5000) -> None:
     """Run a bot-controlled game visually in the terminal."""
     curses.curs_set(0)
     scr.nodelay(False)
@@ -2281,18 +2288,18 @@ def bot_game_loop(scr, speed=0.08, max_turns=5000):
         scr.getch()
 
 
-def bot_batch_mode(num_games=10, player_class=None):
+def bot_batch_mode(num_games: int = 10, player_class: str | None = None) -> list[dict[str, Any]]:
     """Run multiple bot games headless and print summary stats.
 
     Args:
         num_games: Number of games to play.
         player_class: Force a class ("warrior"/"mage"/"rogue") or None for rotation.
     """
-    CLASSES = ["warrior", "mage", "rogue"]
-    results = []
-    crashes = []
+    CLASSES: list[str] = ["warrior", "mage", "rogue"]
+    results: list[dict[str, Any]] = []
+    crashes: list[dict[str, Any]] = []
     for i in range(num_games):
-        game_class = player_class or CLASSES[i % len(CLASSES)]
+        game_class: str = player_class or CLASSES[i % len(CLASSES)]
         try:
             gs = _get_game().GameState(headless=True, player_class=game_class)
             _get_game()._init_new_game(gs)

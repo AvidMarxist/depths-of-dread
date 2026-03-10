@@ -1,43 +1,46 @@
+from __future__ import annotations
+
 import curses
 import os
+from typing import Any
 
 # ============================================================
 # CONSTANTS
 # ============================================================
 
-MAP_W = 80
-MAP_H = 40
-SCREEN_W = 80
-SCREEN_H = 24
-VIEW_W = 58
-VIEW_H = 20
-MSG_H = 3
-STAT_X = 59
-MAX_FLOORS = 20
-MAX_MESSAGES = 50
-FOV_RADIUS = 8
-MAX_INVENTORY = 20
-TORCH_MAX_FUEL = 200
-TORCH_RADIUS_FULL = 8    # fuel > 50%
-TORCH_RADIUS_HALF = 6    # fuel 25-50%
-TORCH_RADIUS_QUARTER = 4 # fuel 1-25%
-TORCH_RADIUS_EMPTY = 2   # fuel == 0
-MANA_REGEN_INTERVAL = 3  # regen 1 mana every N turns (was 5)
-AUTO_FIGHT_HP_THRESHOLD = 0.3  # stop auto-fight when HP below 30% of max
-AUTO_EXPLORE_HP_THRESHOLD = 0.5  # stop auto-explore when HP below 50%
-REST_HUNGER_THRESHOLD = 20  # stop resting when hunger below 20%
-SAVE_FILE_PATH = os.path.expanduser("~/.depths_of_dread_save.json")
-STATS_FILE_PATH = os.path.expanduser("~/.depths_of_dread_stats.json")
-RECORDINGS_DIR = os.path.expanduser("~/.depths_of_dread_recordings/")
-AGENT_LOG_PATH = os.path.expanduser("~/.depths_of_dread_agent.log")
-SIDEBAR_NAME_WIDTH = 18  # width for equipment names in sidebar
-MIN_TERMINAL_W = 80
-MIN_TERMINAL_H = 24
+MAP_W: int = 80
+MAP_H: int = 40
+SCREEN_W: int = 80
+SCREEN_H: int = 24
+VIEW_W: int = 58
+VIEW_H: int = 20
+MSG_H: int = 3
+STAT_X: int = 59
+MAX_FLOORS: int = 20
+MAX_MESSAGES: int = 50
+FOV_RADIUS: int = 8
+MAX_INVENTORY: int = 20
+TORCH_MAX_FUEL: int = 200
+TORCH_RADIUS_FULL: int = 8    # fuel > 50%
+TORCH_RADIUS_HALF: int = 6    # fuel 25-50%
+TORCH_RADIUS_QUARTER: int = 4 # fuel 1-25%
+TORCH_RADIUS_EMPTY: int = 2   # fuel == 0
+MANA_REGEN_INTERVAL: int = 3  # regen 1 mana every N turns (was 5)
+AUTO_FIGHT_HP_THRESHOLD: float = 0.3  # stop auto-fight when HP below 30% of max
+AUTO_EXPLORE_HP_THRESHOLD: float = 0.5  # stop auto-explore when HP below 50%
+REST_HUNGER_THRESHOLD: int = 20  # stop resting when hunger below 20%
+SAVE_FILE_PATH: str = os.path.expanduser("~/.depths_of_dread_save.json")
+STATS_FILE_PATH: str = os.path.expanduser("~/.depths_of_dread_stats.json")
+RECORDINGS_DIR: str = os.path.expanduser("~/.depths_of_dread_recordings/")
+AGENT_LOG_PATH: str = os.path.expanduser("~/.depths_of_dread_agent.log")
+SIDEBAR_NAME_WIDTH: int = 18  # width for equipment names in sidebar
+MIN_TERMINAL_W: int = 80
+MIN_TERMINAL_H: int = 24
 
 # ============================================================
 # BALANCE TUNING — Edit these to adjust difficulty
 # ============================================================
-BALANCE = {
+BALANCE: dict[str, Any] = {
     # --- Item Spawn Weights (relative, auto-normalized) ---
     "item_weights": {
         "weapon": 14,
@@ -273,17 +276,17 @@ BALANCE = {
 }
 
 # Difficulty presets — multipliers applied to BALANCE values
-DIFFICULTY_PRESETS = {
+DIFFICULTY_PRESETS: dict[str, dict[str, float]] = {
     "easy":   {"enemy_hp_mult": 0.7, "enemy_dmg_mult": 0.7, "item_mult": 1.3, "food_mult": 1.5, "xp_mult": 1.3, "gold_mult": 1.5},
     "normal": {"enemy_hp_mult": 1.0, "enemy_dmg_mult": 1.0, "item_mult": 1.0, "food_mult": 1.0, "xp_mult": 1.0, "gold_mult": 1.0},
     "hard":   {"enemy_hp_mult": 1.4, "enemy_dmg_mult": 1.3, "item_mult": 0.8, "food_mult": 0.7, "xp_mult": 0.8, "gold_mult": 0.7},
 }
 
 # Short alias for tight code paths
-B = BALANCE
+B: dict[str, Any] = BALANCE
 
 # Spell definitions
-SPELLS = {
+SPELLS: dict[str, dict[str, Any]] = {
     "Fireball":          {"cost": 12, "desc": "3x3 AoE fire damage in a direction", "mage_only": False},
     "Lightning Bolt":    {"cost": 10, "desc": "Hits all enemies in a line", "mage_only": False},
     "Heal":              {"cost": 8,  "desc": "Restore HP", "mage_only": False},
@@ -295,17 +298,17 @@ SPELLS = {
 }
 
 # Base spells (non-mage-exclusive)
-BASE_SPELLS = {name for name, info in SPELLS.items() if not info["mage_only"]}
+BASE_SPELLS: set[str] = {name for name, info in SPELLS.items() if not info["mage_only"]}
 
 # Default known spells per class
-CLASS_KNOWN_SPELLS = {
+CLASS_KNOWN_SPELLS: dict[str, set[str]] = {
     "warrior": {"Heal", "Teleport"},
     "mage":    {"Heal", "Teleport", "Fireball", "Lightning Bolt", "Freeze", "Chain Lightning"},
     "rogue":   {"Heal", "Teleport", "Fireball"},
 }
 
 # Spell unlock order when choosing Arcana at levelup
-SPELL_UNLOCK_ORDER = {
+SPELL_UNLOCK_ORDER: dict[str | None, list[str]] = {
     "warrior": ["Lightning Bolt", "Freeze"],
     "mage":    ["Meteor", "Mana Shield"],
     "rogue":   ["Lightning Bolt", "Freeze"],
@@ -313,7 +316,7 @@ SPELL_UNLOCK_ORDER = {
 }
 
 # Class-exclusive combat abilities (Warrior/Rogue — parallel to Mage spells)
-CLASS_ABILITIES = {
+CLASS_ABILITIES: dict[str, dict[str, dict[str, Any]]] = {
     "warrior": {
         "Whirlwind":       {"cost": 8,  "desc": "Hit all adjacent enemies"},
         "Cleaving Strike": {"cost": 10, "desc": "2x weapon damage, ignores defense"},
@@ -327,7 +330,7 @@ CLASS_ABILITIES = {
 }
 
 # Unlock order when choosing Cleave/Lethality at levelup
-ABILITY_UNLOCK_ORDER = {
+ABILITY_UNLOCK_ORDER: dict[str | None, list[str]] = {
     "warrior": ["Whirlwind", "Cleaving Strike", "Shield Wall"],
     "rogue":   ["Backstab", "Poison Blade", "Smoke Bomb"],
     "mage":    [],
@@ -335,7 +338,7 @@ ABILITY_UNLOCK_ORDER = {
 }
 
 # Character Classes (D&D Expansion Phase 1)
-CHARACTER_CLASSES = {
+CHARACTER_CLASSES: dict[str, dict[str, Any]] = {
     "warrior": {
         "name": "Warrior", "desc": "Tough frontline fighter with Battle Cry",
         "hp": 40, "mp": 10, "str": 7, "defense": 3,
@@ -363,30 +366,30 @@ CHARACTER_CLASSES = {
 }
 
 # Tile types
-T_WALL = 0
-T_FLOOR = 1
-T_CORRIDOR = 2
-T_DOOR = 3
-T_STAIRS_DOWN = 4
-T_STAIRS_UP = 5
-T_WATER = 6
-T_LAVA = 7
-T_SHOP_FLOOR = 8
-T_SHRINE = 9
-T_ALCHEMY_TABLE = 10
-T_WALL_TORCH = 11
-T_PEDESTAL_UNLIT = 12
-T_PEDESTAL_LIT = 13
-T_SWITCH_OFF = 14
-T_SWITCH_ON = 15
-T_STAIRS_LOCKED = 16
-T_TRAP_HIDDEN = 17    # Invisible trap (renders as T_FLOOR)
-T_TRAP_VISIBLE = 18   # Revealed trap (renders as '^')
-T_ENCHANT_ANVIL = 19  # Enchanting station (Phase 4)
-T_FOUNTAIN = 20       # Healing fountain
-T_SECRET_WALL = 21    # Hidden wall (looks like T_WALL until searched)
+T_WALL: int = 0
+T_FLOOR: int = 1
+T_CORRIDOR: int = 2
+T_DOOR: int = 3
+T_STAIRS_DOWN: int = 4
+T_STAIRS_UP: int = 5
+T_WATER: int = 6
+T_LAVA: int = 7
+T_SHOP_FLOOR: int = 8
+T_SHRINE: int = 9
+T_ALCHEMY_TABLE: int = 10
+T_WALL_TORCH: int = 11
+T_PEDESTAL_UNLIT: int = 12
+T_PEDESTAL_LIT: int = 13
+T_SWITCH_OFF: int = 14
+T_SWITCH_ON: int = 15
+T_STAIRS_LOCKED: int = 16
+T_TRAP_HIDDEN: int = 17    # Invisible trap (renders as T_FLOOR)
+T_TRAP_VISIBLE: int = 18   # Revealed trap (renders as '^')
+T_ENCHANT_ANVIL: int = 19  # Enchanting station (Phase 4)
+T_FOUNTAIN: int = 20       # Healing fountain
+T_SECRET_WALL: int = 21    # Hidden wall (looks like T_WALL until searched)
 
-TILE_CHARS = {
+TILE_CHARS: dict[int, str] = {
     T_WALL: '#', T_FLOOR: '.', T_CORRIDOR: '.', T_DOOR: '+',
     T_STAIRS_DOWN: '>', T_STAIRS_UP: '<', T_WATER: '~',
     T_LAVA: '~', T_SHOP_FLOOR: '.', T_SHRINE: '_',
@@ -401,12 +404,12 @@ TILE_CHARS = {
     T_SECRET_WALL: '#',   # Looks like a normal wall
 }
 
-WALKABLE = {T_FLOOR, T_CORRIDOR, T_DOOR, T_STAIRS_DOWN, T_STAIRS_UP,
+WALKABLE: set[int] = {T_FLOOR, T_CORRIDOR, T_DOOR, T_STAIRS_DOWN, T_STAIRS_UP,
             T_WATER, T_SHOP_FLOOR, T_SHRINE, T_ALCHEMY_TABLE,
             T_PEDESTAL_UNLIT, T_PEDESTAL_LIT, T_SWITCH_OFF, T_SWITCH_ON,
             T_TRAP_HIDDEN, T_TRAP_VISIBLE, T_ENCHANT_ANVIL, T_FOUNTAIN}
 
-THEMES = [
+THEMES: list[str] = [
     "Dungeon", "Dungeon", "Dungeon",
     "Caverns", "Caverns", "Caverns",
     "Catacombs", "Catacombs", "Catacombs",
@@ -419,7 +422,7 @@ THEMES = [
 ]
 
 # Dungeon Branch system — branching paths at floors 5 and 10
-BRANCH_DEFS = {
+BRANCH_DEFS: dict[str, dict[str, Any]] = {
     "flooded_crypts": {
         "name": "The Flooded Crypts",
         "desc": "Water-heavy, undead, cold damage",
@@ -515,7 +518,7 @@ BRANCH_DEFS = {
 }
 
 # Branch choice mapping: floor → (branch_A, branch_B)
-BRANCH_CHOICES = {
+BRANCH_CHOICES: dict[int, tuple[str, str]] = {
     2: ("fungal_depths", "trapped_halls"),
     5: ("flooded_crypts", "burning_pits"),
     10: ("mind_halls", "beast_warrens"),
@@ -525,29 +528,29 @@ BRANCH_CHOICES = {
 # ============================================================
 # COLOR PAIRS
 # ============================================================
-C_WHITE = 1
-C_RED = 2
-C_GREEN = 3
-C_BLUE = 4
-C_YELLOW = 5
-C_MAGENTA = 6
-C_CYAN = 7
-C_DARK = 8
-C_GOLD = 9
-C_LAVA = 10
-C_WATER = 11
-C_PLAYER = 12
-C_UI = 13
-C_TITLE = 14
-C_BOSS = 15
-C_SHRINE = 16
+C_WHITE: int = 1
+C_RED: int = 2
+C_GREEN: int = 3
+C_BLUE: int = 4
+C_YELLOW: int = 5
+C_MAGENTA: int = 6
+C_CYAN: int = 7
+C_DARK: int = 8
+C_GOLD: int = 9
+C_LAVA: int = 10
+C_WATER: int = 11
+C_PLAYER: int = 12
+C_UI: int = 13
+C_TITLE: int = 14
+C_BOSS: int = 15
+C_SHRINE: int = 16
 
 # Challenge mode configuration (Phase 4)
-_CHALLENGE_MODES = {"ironman": False, "speedrun": False, "pacifist": False, "dark": False}
+_CHALLENGE_MODES: dict[str, bool] = {"ironman": False, "speedrun": False, "pacifist": False, "dark": False}
 
-HAS_COLORS = True  # set at runtime by init_colors
+HAS_COLORS: bool = True  # set at runtime by init_colors
 
-def init_colors():
+def init_colors() -> None:
     global HAS_COLORS
     if not curses.has_colors():
         HAS_COLORS = False
@@ -573,7 +576,7 @@ def init_colors():
     HAS_COLORS = True
 
 
-def safe_color_pair(pair_num):
+def safe_color_pair(pair_num: int) -> int:
     """Return color pair attribute, falling back to A_BOLD/A_DIM when no colors."""
     if HAS_COLORS:
         return curses.color_pair(pair_num)
@@ -592,7 +595,7 @@ def safe_color_pair(pair_num):
 # ITEM DATA
 # ============================================================
 
-WEAPON_TYPES = [
+WEAPON_TYPES: list[dict[str, Any]] = [
     {"name": "Rusty Dagger",    "char": ')', "dmg": (1,4),  "speed": 1.0, "bonus": 0, "desc": "Corroded but sharp.", "tier": 0},
     {"name": "Short Sword",     "char": ')', "dmg": (2,5),  "speed": 1.0, "bonus": 0, "desc": "A reliable sidearm.", "tier": 1},
     {"name": "Mace",            "char": ')', "dmg": (2,7),  "speed": 0.8, "bonus": 0, "desc": "Slow but crushing.", "tier": 1},
@@ -606,14 +609,14 @@ WEAPON_TYPES = [
 ]
 
 # Boss-specific weapon drops (#20)
-BOSS_DROPS = {
+BOSS_DROPS: dict[str, dict[str, Any]] = {
     "ogre_king": {"name": "Ogre King's Maul", "char": ')', "dmg": (8,16), "speed": 0.6, "bonus": 2, "desc": "Massive and devastating.", "tier": 5},
     "vampire_lord": {"name": "Vampiric Blade", "char": ')', "dmg": (6,14), "speed": 1.1, "bonus": 3, "desc": "Drains life with each strike.", "tier": 5, "lifesteal": True},
     "dread_lord": {"name": "Dread Lord's Bane", "char": ')', "dmg": (10,20), "speed": 1.0, "bonus": 5, "desc": "Forged from pure dread.", "tier": 5},
     "abyssal_horror": {"name": "Void Reaver", "char": ')', "dmg": (14,28), "speed": 1.0, "bonus": 7, "desc": "A blade forged from collapsed reality.", "tier": 6},
 }
 
-ARMOR_TYPES = [
+ARMOR_TYPES: list[dict[str, Any]] = [
     {"name": "Torn Rags",       "char": '[', "defense": 0,  "desc": "Barely clothing.", "tier": 0},
     {"name": "Leather Armor",   "char": '[', "defense": 2,  "desc": "Supple and light.", "tier": 1},
     {"name": "Studded Leather", "char": '[', "defense": 3,  "desc": "Reinforced with studs.", "tier": 1},
@@ -624,20 +627,20 @@ ARMOR_TYPES = [
     {"name": "Dread Plate",     "char": '[', "defense": 10, "desc": "Forged in the abyss.", "tier": 5},
 ]
 
-POTION_EFFECTS = ["Healing", "Strength", "Speed", "Poison", "Blindness", "Experience", "Resistance", "Berserk", "Mana"]
-POTION_COLORS = ["Red", "Blue", "Green", "Murky", "Glowing", "Bubbling", "Shimmering", "Dark", "Azure"]
+POTION_EFFECTS: list[str] = ["Healing", "Strength", "Speed", "Poison", "Blindness", "Experience", "Resistance", "Berserk", "Mana"]
+POTION_COLORS: list[str] = ["Red", "Blue", "Green", "Murky", "Glowing", "Bubbling", "Shimmering", "Dark", "Azure"]
 
-SCROLL_EFFECTS = ["Identify", "Teleport", "Fireball", "Mapping", "Enchant", "Fear", "Summon", "Lightning"]
-SCROLL_LABELS = ["XYZZY", "PLUGH", "ABRACADABRA", "KLAATU", "LOREM", "IPSUM", "NIHIL", "VERITAS"]
+SCROLL_EFFECTS: list[str] = ["Identify", "Teleport", "Fireball", "Mapping", "Enchant", "Fear", "Summon", "Lightning"]
+SCROLL_LABELS: list[str] = ["XYZZY", "PLUGH", "ABRACADABRA", "KLAATU", "LOREM", "IPSUM", "NIHIL", "VERITAS"]
 
-FOOD_TYPES = [
+FOOD_TYPES: list[dict[str, Any]] = [
     {"name": "Stale Bread",   "char": '%', "nutrition": 15, "desc": "Hard but edible."},
     {"name": "Dried Meat",    "char": '%', "nutrition": 25, "desc": "Tough and salty."},
     {"name": "Elven Waybread","char": '%', "nutrition": 40, "desc": "Sustaining and light."},
     {"name": "Mystery Meat",  "char": '%', "nutrition": 20, "desc": "Don't ask."},
 ]
 
-RING_TYPES = [
+RING_TYPES: list[dict[str, Any]] = [
     {"name": "Ring of Protection", "char": '=', "effect": "defense", "value": 2, "desc": "+2 Defense"},
     {"name": "Ring of Strength",   "char": '=', "effect": "strength", "value": 2, "desc": "+2 Strength"},
     {"name": "Ring of Evasion",    "char": '=', "effect": "evasion", "value": 10, "desc": "+10% Evasion"},
@@ -649,32 +652,32 @@ RING_TYPES = [
 ]
 
 # Projectile / ranged item data
-BOW_TYPES = [
+BOW_TYPES: list[dict[str, Any]] = [
     {"name": "Short Bow",   "char": '}', "dmg": (2,5),  "range": 6,  "bonus": 0, "desc": "Simple but functional.", "tier": 1},
     {"name": "Long Bow",    "char": '}', "dmg": (3,8),  "range": 8,  "bonus": 1, "desc": "Greater range and power.", "tier": 2},
     {"name": "Elven Bow",   "char": '}', "dmg": (4,10), "range": 10, "bonus": 3, "desc": "Whisper-light, deadly.", "tier": 4},
 ]
 
-WAND_TYPES = [
+WAND_TYPES: list[dict[str, Any]] = [
     {"name": "Wand of Fire",      "char": '/', "dmg": (5,12),  "charges": 8,  "desc": "Shoots fire bolts.", "tier": 2},
     {"name": "Wand of Frost",     "char": '/', "dmg": (4,10),  "charges": 10, "desc": "Chilling bolts.", "tier": 2},
     {"name": "Wand of Lightning", "char": '/', "dmg": (6,15),  "charges": 5,  "desc": "Crackling energy.", "tier": 3},
 ]
 
-TORCH_TYPES = [
+TORCH_TYPES: list[dict[str, Any]] = [
     {"name": "Torch",        "char": '(', "fuel": 80,  "desc": "A wooden torch."},
     {"name": "Lantern Oil",  "char": '(', "fuel": 50,  "desc": "Oil for your light."},
     {"name": "Magic Candle", "char": '(', "fuel": 120, "desc": "Burns with arcane flame."},
 ]
 
-THROWING_DAGGER = {"name": "Throwing Dagger", "char": ')', "dmg": (3,7), "desc": "Balanced for throwing.", "tier": 1}
-ARROW_ITEM = {"name": "Arrow", "char": '|', "count": 5, "desc": "A bundle of arrows."}
+THROWING_DAGGER: dict[str, Any] = {"name": "Throwing Dagger", "char": ')', "dmg": (3,7), "desc": "Balanced for throwing.", "tier": 1}
+ARROW_ITEM: dict[str, Any] = {"name": "Arrow", "char": '|', "count": 5, "desc": "A bundle of arrows."}
 
 # ============================================================
 # ENEMY DATA
 # ============================================================
 
-ENEMY_TYPES = {
+ENEMY_TYPES: dict[str, dict[str, Any]] = {
     "rat":         {"name": "Rat",          "char": 'r', "color": C_DARK,    "hp": 6,   "dmg": (1,3),  "defense": 0, "xp": 5,    "speed": 1.2, "ai": "chase",    "min_floor": 1,  "max_floor": 5,  "flee_threshold": 0.15},
     "bat":         {"name": "Bat",          "char": 'b', "color": C_MAGENTA, "hp": 4,   "dmg": (1,2),  "defense": 0, "xp": 3,    "speed": 1.5, "ai": "erratic",  "min_floor": 1,  "max_floor": 6,  "flee_threshold": 0.2},
     "goblin":      {"name": "Goblin",       "char": 'g', "color": C_GREEN,   "hp": 12,  "dmg": (2,5),  "defense": 1, "xp": 15,   "speed": 1.0, "ai": "chase",    "min_floor": 1,  "max_floor": 8,  "flee_threshold": 0.15},
@@ -719,7 +722,7 @@ ENEMY_TYPES = {
     "entropy_mage":  {"name": "Entropy Mage",  "char": 'E', "color": C_CYAN,    "hp": 90,  "dmg": (8,15), "defense": 6,  "xp": 200,  "speed": 0.8, "ai": "ranged",   "min_floor": 17, "max_floor": 20, "flee_threshold": 0.0, "silence_chance": 0.30, "damage_type": "cold", "resists": ["cold", "fire"]},
 }
 
-TRAP_TYPES = {
+TRAP_TYPES: dict[str, dict[str, Any]] = {
     "spike":    {"name": "Spike Trap",    "damage": (3, 8),  "effect": None,        "detect_dc": 12, "min_floor": 1},
     "dart":     {"name": "Dart Trap",     "damage": (2, 6),  "effect": "poison",    "detect_dc": 14, "min_floor": 3},
     "pit":      {"name": "Pit Trap",      "damage": (4, 10), "effect": "stun",      "detect_dc": 12, "min_floor": 2},
@@ -731,7 +734,7 @@ TRAP_TYPES = {
 # ============================================================
 # ENVIRONMENTAL VIGNETTES
 # ============================================================
-VIGNETTE_TEMPLATES = [
+VIGNETTE_TEMPLATES: list[dict[str, Any]] = [
     {"name": "Fallen Adventurer", "char": '&', "lore": "A skeleton clutches a faded journal: 'Day 7... the walls are closing in.'", "loot_chance": 0.40, "loot_tier": 1},
     {"name": "Barricaded Room", "char": '#', "lore": "Scratch marks cover the inside of a hastily barricaded door. Whatever was here... got out.", "loot_chance": 0.25, "loot_tier": 2},
     {"name": "Ritual Circle", "char": '*', "lore": "Melted candles surround a circle of strange symbols etched in blood.", "loot_chance": 0.50, "loot_tier": 2},
@@ -762,7 +765,7 @@ VIGNETTE_TEMPLATES = [
 # ============================================================
 # NPC ENCOUNTERS (Phase 3)
 # ============================================================
-NPC_TYPES = {
+NPC_TYPES: dict[str, dict[str, Any]] = {
     "wandering_merchant": {
         "name": "Wandering Merchant",
         "char": '@',
@@ -813,7 +816,7 @@ NPC_TYPES = {
 # ============================================================
 # WEAPON ENCHANTMENTS (Phase 4)
 # ============================================================
-ENCHANTMENTS = {
+ENCHANTMENTS: dict[str, dict[str, Any]] = {
     "flame": {"name": "Flame", "desc": "+fire damage, ignite chance", "bonus_dmg": 3, "element": "fire", "proc_chance": 0.20, "proc_effect": "burn"},
     "frost": {"name": "Frost", "desc": "+cold damage, slow chance", "bonus_dmg": 2, "element": "cold", "proc_chance": 0.25, "proc_effect": "slow"},
     "venom": {"name": "Venom", "desc": "+poison damage, poison chance", "bonus_dmg": 2, "element": "poison", "proc_chance": 0.30, "proc_effect": "poison"},
@@ -822,7 +825,7 @@ ENCHANTMENTS = {
     "keen": {"name": "Keen", "desc": "+crit chance and damage", "bonus_dmg": 0, "element": "physical", "proc_chance": 0.25, "proc_effect": "crit"},
 }
 
-DEATH_QUIPS = [
+DEATH_QUIPS: list[str] = [
     "The dungeon claims another soul.",
     "Your bones join the countless others.",
     "Should have brought more potions.",
@@ -834,7 +837,7 @@ DEATH_QUIPS = [
 ]
 
 # Level-up choice pool
-LEVELUP_CHOICES = [
+LEVELUP_CHOICES: list[dict[str, Any]] = [
     {"name": "Might",     "desc": "+HP +STR",       "hp": 3,  "mp": 0, "str": 1, "def": 0, "evasion": 0},
     {"name": "Arcana",    "desc": "+MP, learn new spell", "hp": 0,  "mp": 5, "str": 0, "def": 0, "evasion": 0},
     {"name": "Fortitude", "desc": "+HP +DEF",        "hp": 4,  "mp": 0, "str": 0, "def": 1, "evasion": 0},
@@ -843,13 +846,13 @@ LEVELUP_CHOICES = [
 ]
 
 # Class-specific level-up bonuses (added to pool when class matches)
-CLASS_LEVELUP_CHOICES = {
+CLASS_LEVELUP_CHOICES: dict[str, dict[str, Any]] = {
     "warrior": {"name": "Cleave",    "desc": "+STR +DEF, learn technique", "hp": 2, "mp": 0, "str": 2, "def": 1, "evasion": 0},
     "mage":    {"name": "Mana Well", "desc": "+big MP (Mage)",              "hp": 0, "mp": 10,"str": 0, "def": 0, "evasion": 0},
     "rogue":   {"name": "Lethality", "desc": "+STR +evasion, learn technique","hp": 0, "mp": 2, "str": 2, "def": 0, "evasion": 5},
 }
 
-def safe_addstr(scr, y, x, s, attr=0):
+def safe_addstr(scr: Any, y: int, x: int, s: str, attr: int = 0) -> None:
     h, w = scr.getmaxyx()
     if y < 0 or y >= h or x >= w:
         return
@@ -860,7 +863,7 @@ def safe_addstr(scr, y, x, s, attr=0):
         pass
 
 # Meta-progression unlock definitions
-META_UNLOCKS = {
+META_UNLOCKS: dict[str, dict[str, str]] = {
     "extra_potion": {"name": "Potion Affinity", "desc": "Start with an extra potion", "req": "total_games >= 3"},
     "map_reveal": {"name": "Cartographer", "desc": "Start with partial map reveal", "req": "highest_floor >= 5"},
     "bonus_gold": {"name": "Inheritance", "desc": "Start with 50 bonus gold", "req": "total_kills >= 50"},
@@ -870,7 +873,7 @@ META_UNLOCKS = {
     "starting_weapon": {"name": "Armed & Ready", "desc": "Start with a tier 2 weapon", "req": "most_kills_single_run >= 30"},
 }
 
-AGENT_SYSTEM_PROMPT = """Roguelike AI. Respond ONLY with JSON: {"action":"<act>","reason":"<short>"}
+AGENT_SYSTEM_PROMPT: str = """Roguelike AI. Respond ONLY with JSON: {"action":"<act>","reason":"<short>"}
 Actions: move_north/south/east/west/ne/nw/se/sw, attack, fire_north/south/east/west, cast_heal, cast_fireball_<dir>, cast_freeze, cast_lightning_<dir>, cast_teleport, cast_chain_lightning, cast_meteor_<dir>, cast_mana_shield, use_whirlwind, use_cleaving_strike, use_shield_wall, use_backstab, use_poison_blade, use_smoke_bomb, use_potion, eat_food, equip <name>, descend, rest, wait, pickup, pray, toggle_torch, use_alchemy, light_pedestal, grab_wall_torch, search_traps, disarm_trap
 Combat: Flee HP<20%. Eat hunger<30%. Fireball groups (fire element). Freeze bosses. Chain Lightning 2+ (lightning). Meteor big AoE (fire). Mana Shield tough fights. Whirlwind 3+ adj. Shield Wall low HP. Backstab bosses. Smoke Bomb escape.
 Explore: 40%+ before descend. Conserve torch/arrows.
@@ -888,10 +891,10 @@ Branches: At floor 5 and 10, path branches. Each branch has themed enemies, terr
 Bestiary: Monster Memory tracks encounters, kills, abilities for each enemy type. Use past knowledge to choose tactics.
 Stuck: If you're stuck (repeating same positions), try a different direction. Move toward unexplored areas (shown as ?) or toward stairs (>). If on a puzzle floor, look for switches or pedestals. Cast teleport to escape dead ends."""
 
-CLAUDE_BIN = "/Users/will/.local/bin/claude"
+CLAUDE_BIN: str = "/Users/will/.local/bin/claude"
 
 # Direction mappings for action parsing
-_DIR_MAP = {
+_DIR_MAP: dict[str, tuple[int, int]] = {
     "north": (0, -1), "south": (0, 1), "east": (1, 0), "west": (-1, 0),
     "ne": (1, -1), "nw": (-1, -1), "se": (1, 1), "sw": (-1, 1),
     "n": (0, -1), "s": (0, 1), "e": (1, 0), "w": (-1, 0),

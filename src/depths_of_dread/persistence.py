@@ -3,6 +3,8 @@ Persistence layer for Depths of Dread.
 Handles lifetime stats, save/load, session recording, and session replay.
 """
 
+from __future__ import annotations
+
 import json
 import hashlib
 import os
@@ -10,15 +12,20 @@ import datetime
 import time
 import curses
 from pathlib import Path
+from typing import Any, TYPE_CHECKING
+
 from .constants import *
 from .entities import Item, Enemy, Player
+
+if TYPE_CHECKING:
+    from .game import GameState
 
 
 # ============================================================
 # PERSISTENT LIFETIME STATS
 # ============================================================
 
-def _default_lifetime_stats():
+def _default_lifetime_stats() -> dict[str, Any]:
     """Return a fresh lifetime stats dictionary."""
     return {
         "total_games": 0,
@@ -35,7 +42,7 @@ def _default_lifetime_stats():
     }
 
 
-def check_meta_unlocks(stats):
+def check_meta_unlocks(stats: dict[str, Any]) -> list[str]:
     """Check which meta-progression unlocks the player has earned."""
     unlocks = list(stats.get("unlocks", []))
     for key, unlock in META_UNLOCKS.items():
@@ -52,7 +59,7 @@ def check_meta_unlocks(stats):
     return unlocks
 
 
-def apply_meta_unlocks(gs):
+def apply_meta_unlocks(gs: GameState) -> None:
     """Apply meta-progression bonuses at game start."""
     import random as _random
     stats = load_lifetime_stats()
@@ -89,7 +96,7 @@ def apply_meta_unlocks(gs):
                 p.inventory.append(item)
 
 
-def load_lifetime_stats():
+def load_lifetime_stats() -> dict[str, Any]:
     """Load lifetime stats from disk. Returns defaults if missing/corrupt."""
     try:
         with open(STATS_FILE_PATH, 'r') as f:
@@ -111,7 +118,7 @@ def load_lifetime_stats():
         return _default_lifetime_stats()
 
 
-def save_lifetime_stats(stats):
+def save_lifetime_stats(stats: dict[str, Any]) -> None:
     """Save lifetime stats to disk."""
     try:
         with open(STATS_FILE_PATH, 'w') as f:
@@ -120,7 +127,7 @@ def save_lifetime_stats(stats):
         pass  # Silently fail if we can't write
 
 
-def update_lifetime_stats(gs):
+def update_lifetime_stats(gs: GameState) -> dict[str, Any]:
     """Update lifetime stats at end of a game (death or victory). Returns updated stats."""
     stats = load_lifetime_stats()
     p = gs.player
@@ -150,7 +157,7 @@ def update_lifetime_stats(gs):
     return stats
 
 
-def show_lifetime_stats(scr):
+def show_lifetime_stats(scr: Any) -> None:
     """Display lifetime stats overlay."""
     from .ui import safe_addstr
     stats = load_lifetime_stats()
@@ -191,7 +198,7 @@ def show_lifetime_stats(scr):
     scr.getch()
 
 
-def _format_lifetime_stats_lines(stats):
+def _format_lifetime_stats_lines(stats: dict[str, Any]) -> list[tuple[str, int]]:
     """Format lifetime stats as lines for embedding in death/victory screens."""
     win_rate = f"{stats['total_wins']/stats['total_games']*100:.0f}%" if stats['total_games'] > 0 else "N/A"
     return [
@@ -207,12 +214,12 @@ def _format_lifetime_stats_lines(stats):
 # SAVE/LOAD SYSTEM (Phase 7, item 33)
 # ============================================================
 
-def _compute_checksum(data_str):
+def _compute_checksum(data_str: str) -> str:
     """Compute SHA256 checksum for save data integrity."""
     return hashlib.sha256(data_str.encode('utf-8')).hexdigest()
 
 
-def save_game(gs):
+def save_game(gs: GameState) -> bool:
     """Save game state to JSON file."""
     p = gs.player
     save_data = {
@@ -302,7 +309,7 @@ def save_game(gs):
         return False
 
 
-def load_game():
+def load_game() -> GameState | None:
     """Load game state from JSON file. Returns GameState or None."""
     from .game import GameState
     from .entities import ShopItem
@@ -423,7 +430,7 @@ def load_game():
         return None
 
 
-def delete_save():
+def delete_save() -> None:
     """Delete save file (on death — permadeath)."""
     try:
         os.remove(SAVE_FILE_PATH)
@@ -431,12 +438,12 @@ def delete_save():
         pass
 
 
-def save_exists():
+def save_exists() -> bool:
     """Check if a save file exists."""
     return os.path.exists(SAVE_FILE_PATH)
 
 
-def _serialize_item(item):
+def _serialize_item(item: Item) -> dict[str, Any]:
     return {
         "x": item.x, "y": item.y, "item_type": item.item_type,
         "subtype": item.subtype if not isinstance(item.subtype, int) else item.subtype,
@@ -445,11 +452,11 @@ def _serialize_item(item):
     }
 
 
-def _serialize_item_on_ground(item):
+def _serialize_item_on_ground(item: Item) -> dict[str, Any]:
     return _serialize_item(item)
 
 
-def _serialize_enemy(e):
+def _serialize_enemy(e: Enemy) -> dict[str, Any]:
     d = {
         "x": e.x, "y": e.y, "etype": e.etype,
         "hp": e.hp, "max_hp": e.max_hp, "alerted": e.alerted,
@@ -486,7 +493,7 @@ def _serialize_enemy(e):
     return d
 
 
-def _deserialize_item(d):
+def _deserialize_item(d: dict[str, Any]) -> Item:
     item = Item(d["x"], d["y"], d["item_type"], d["subtype"], d["data"])
     item.identified = d.get("identified", False)
     item.equipped = d.get("equipped", False)
@@ -494,11 +501,11 @@ def _deserialize_item(d):
     return item
 
 
-def _deserialize_item_ground(d):
+def _deserialize_item_ground(d: dict[str, Any]) -> Item:
     return _deserialize_item(d)
 
 
-def _deserialize_enemy(d):
+def _deserialize_enemy(d: dict[str, Any]) -> Enemy:
     e = Enemy(d["x"], d["y"], d["etype"])
     e.hp = d["hp"]
     e.max_hp = d["max_hp"]
@@ -532,29 +539,29 @@ def _deserialize_enemy(d):
 class SessionRecorder:
     """Records game events to a JSONL file for later replay."""
 
-    def __init__(self, seed, player_name="Adventurer"):
+    def __init__(self, seed: int, player_name: str = "Adventurer") -> None:
         os.makedirs(RECORDINGS_DIR, exist_ok=True)
         ts = datetime.datetime.now().strftime("%Y%m%d_%H%M%S")
-        self.filepath = os.path.join(RECORDINGS_DIR, f"{ts}_{seed}.jsonl")
+        self.filepath: str = os.path.join(RECORDINGS_DIR, f"{ts}_{seed}.jsonl")
         self._file = open(self.filepath, 'w')
         self._write({"event": "init", "seed": seed, "version": 1,
                       "date": ts, "player_name": player_name})
-        self._turn = 0
+        self._turn: int = 0
 
-    def _write(self, data):
+    def _write(self, data: dict[str, Any]) -> None:
         self._file.write(json.dumps(data, separators=(',', ':')) + '\n')
 
-    def record(self, event_type, data=None):
-        entry = {"event": event_type, "turn": self._turn}
+    def record(self, event_type: str, data: dict[str, Any] | None = None) -> None:
+        entry: dict[str, Any] = {"event": event_type, "turn": self._turn}
         if data:
             entry.update(data)
         self._write(entry)
 
-    def record_input(self, key_name, turn):
+    def record_input(self, key_name: str, turn: int) -> None:
         self._turn = turn
         self._write({"event": "input", "key": key_name, "turn": turn})
 
-    def record_state_snapshot(self, gs):
+    def record_state_snapshot(self, gs: GameState) -> None:
         p = gs.player
         self._write({"event": "state_snapshot", "turn": gs.turn_count,
                       "hp": p.hp, "max_hp": p.max_hp, "mana": p.mana,
@@ -562,35 +569,35 @@ class SessionRecorder:
                       "x": p.x, "y": p.y, "kills": p.kills, "gold": p.gold,
                       "level": p.level, "inventory_count": len(p.inventory)})
 
-    def record_floor_change(self, gs):
+    def record_floor_change(self, gs: GameState) -> None:
         self._write({"event": "floor_change", "turn": gs.turn_count,
                       "floor": gs.player.floor,
                       "enemies": len(gs.enemies), "items": len(gs.items)})
 
-    def record_combat(self, enemy_name, damage, result):
+    def record_combat(self, enemy_name: str, damage: int, result: str) -> None:
         self._write({"event": "combat", "turn": self._turn,
                       "enemy": enemy_name, "damage": damage, "result": result})
 
-    def record_death(self, gs):
+    def record_death(self, gs: GameState) -> None:
         from .ui import calculate_score
         p = gs.player
         self._write({"event": "death", "turn": gs.turn_count,
                       "cause": gs.death_cause or "unknown",
                       "floor": p.floor, "score": calculate_score(p, gs)})
 
-    def record_victory(self, gs):
+    def record_victory(self, gs: GameState) -> None:
         from .ui import calculate_score
         p = gs.player
         self._write({"event": "victory", "turn": gs.turn_count,
                       "floor": p.floor, "score": calculate_score(p, gs)})
 
-    def close(self):
+    def close(self) -> None:
         if self._file and not self._file.closed:
             self._file.flush()
             self._file.close()
 
 
-def list_recordings():
+def list_recordings() -> None:
     """List saved recording files with metadata."""
     if not os.path.isdir(RECORDINGS_DIR):
         print("No recordings found.")
@@ -623,7 +630,7 @@ def list_recordings():
 # SESSION REPLAY
 # ============================================================
 
-def replay_session(scr, filepath, speed=1.0):
+def replay_session(scr: Any, filepath: str, speed: float = 1.0) -> None:
     """Replay a recorded session visually in the terminal."""
     from .game import GameState, _init_new_game, _choose_branch_headless
     from .ui import safe_addstr, init_colors, render_game, compute_fov

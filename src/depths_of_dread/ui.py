@@ -5,23 +5,30 @@ Contains all rendering functions, UI screens, context tips,
 look/examine mode, auto-fight, auto-explore, rest, and
 enhanced death/victory screens.
 """
+from __future__ import annotations
 
 import curses
 import random
 import time
+import types
 from collections import deque
+from typing import Any, TYPE_CHECKING
+
 from .constants import *
 from .entities import Item, Player
 from .mapgen import compute_fov, astar, _has_los
 from .combat import process_enemies, player_attack
 
+if TYPE_CHECKING:
+    from .game import GameState
 
-def _get_items():
+
+def _get_items() -> types.ModuleType:
     from . import items
     return items
 
 
-def _get_game():
+def _get_game() -> types.ModuleType:
     from . import game
     return game
 
@@ -30,7 +37,7 @@ def _get_game():
 # RENDERING
 # ============================================================
 
-def render_map(scr, gs):
+def render_map(scr: Any, gs: GameState) -> None:
     p = gs.player
     cam_x = max(0, min(p.x - VIEW_W//2, MAP_W - VIEW_W))
     cam_y = max(0, min(p.y - VIEW_H//2, MAP_H - VIEW_H))
@@ -100,7 +107,7 @@ def render_map(scr, gs):
                 safe_addstr(scr, sy, sx, ' ')
 
 
-def _draw_tile(scr, sy, sx, tile, lit, floor_num):
+def _draw_tile(scr: Any, sy: int, sx: int, tile: int, lit: bool, floor_num: int) -> None:
     ch = TILE_CHARS.get(tile, ' ')
     if lit:
         if tile == T_WALL:
@@ -163,7 +170,7 @@ def _draw_tile(scr, sy, sx, tile, lit, floor_num):
     safe_addstr(scr, sy, sx, ch, a)
 
 
-def render_sidebar(scr, gs):
+def render_sidebar(scr: Any, gs: GameState) -> None:
     p = gs.player
     x = STAT_X
     sw = SCREEN_W - x - 1  # available sidebar width
@@ -341,7 +348,7 @@ def render_sidebar(scr, gs):
             y += 1
 
 
-def render_messages(scr, gs):
+def render_messages(scr: Any, gs: GameState) -> None:
     msgs = list(gs.messages)
     start_y = VIEW_H
     # Build display lines with word-wrap (Phase 2 item 8)
@@ -371,7 +378,7 @@ def render_messages(scr, gs):
         safe_addstr(scr, start_y + i, 0, text[:VIEW_W], curses.color_pair(color))
 
 
-def render_game(scr, gs):
+def render_game(scr: Any, gs: GameState) -> None:
     scr.erase()
     fov_radius = gs.player.get_torch_radius()
     if "Blindness" in gs.player.status_effects:
@@ -424,7 +431,7 @@ def render_game(scr, gs):
 # UI SCREENS
 # ============================================================
 
-def show_title(scr):
+def show_title(scr: Any) -> None:
     scr.erase()
     h, w = scr.getmaxyx()
     art = [
@@ -466,7 +473,7 @@ def show_title(scr):
     scr.getch()
 
 
-def show_help(scr):
+def show_help(scr: Any) -> None:
     """Show comprehensive help screen with categories (Phase 5, item 24)."""
     # Flush buffered keypresses (#17)
     scr.nodelay(True)
@@ -547,7 +554,7 @@ def show_help(scr):
             return
 
 
-def _inv_letter(idx):
+def _inv_letter(idx: int) -> str:
     """Map inventory index to display letter: a-z then A-Z."""
     if idx < 26:
         return chr(ord('a') + idx)
@@ -555,7 +562,7 @@ def _inv_letter(idx):
         return chr(ord('A') + idx - 26)
     return '?'
 
-def _inv_key_to_idx(key, scroll_offset=0):
+def _inv_key_to_idx(key: int, scroll_offset: int = 0) -> int:
     """Convert keypress to inventory index (accounting for scroll)."""
     if ord('a') <= key <= ord('z'):
         return key - ord('a') + scroll_offset
@@ -563,7 +570,7 @@ def _inv_key_to_idx(key, scroll_offset=0):
         return key - ord('A') + 26 + scroll_offset
     return -1
 
-def show_bestiary(scr, gs):
+def show_bestiary(scr: Any, gs: GameState) -> None:
     """Show the Monster Memory / Bestiary screen (M key)."""
     # Flush buffered keypresses
     scr.nodelay(True)
@@ -669,7 +676,7 @@ def show_bestiary(scr, gs):
             page -= 1
 
 
-def show_inventory(scr, gs):
+def show_inventory(scr: Any, gs: GameState) -> bool:
     p = gs.player
     scroll_offset = 0
     # Flush buffered keypresses (#17)
@@ -893,7 +900,7 @@ def show_inventory(scr, gs):
     return False
 
 
-def show_character(scr, gs):
+def show_character(scr: Any, gs: GameState) -> None:
     # Flush buffered keypresses (#17)
     scr.nodelay(True)
     while scr.getch() != -1:
@@ -934,7 +941,7 @@ def show_character(scr, gs):
     scr.getch()
 
 
-def show_shop(scr, gs):
+def show_shop(scr: Any, gs: GameState) -> None:
     # Flush buffered keypresses (#17)
     scr.nodelay(True)
     while scr.getch() != -1:
@@ -1026,7 +1033,7 @@ def show_shop(scr, gs):
                 gs.msg(f"Sold {item.display_name} for {val}g.", C_GOLD)
 
 
-def show_messages(scr, gs):
+def show_messages(scr: Any, gs: GameState) -> None:
     scr.erase()
     safe_addstr(scr, 0, 1, "MESSAGE LOG", curses.color_pair(C_TITLE) | curses.A_BOLD)
     msgs = list(gs.messages)
@@ -1040,7 +1047,7 @@ def show_messages(scr, gs):
     scr.getch()
 
 
-def calculate_score(p, gs):
+def calculate_score(p: Player, gs: GameState) -> int:
     """Calculate final score."""
     score = p.gold + p.kills * 50 + p.deepest_floor * 200 + p.damage_dealt
     if gs.victory:
@@ -1048,7 +1055,7 @@ def calculate_score(p, gs):
     return score
 
 
-def show_death(scr, gs):
+def show_death(scr: Any, gs: GameState) -> None:
     p = gs.player
     elapsed = int(time.time() - gs.start_time)
     m, s = elapsed // 60, elapsed % 60
@@ -1091,7 +1098,7 @@ def show_death(scr, gs):
     scr.getch()
 
 
-def show_victory(scr, gs):
+def show_victory(scr: Any, gs: GameState) -> None:
     p = gs.player
     elapsed = int(time.time() - gs.start_time)
     m, s = elapsed // 60, elapsed % 60
@@ -1135,7 +1142,7 @@ def show_victory(scr, gs):
 # CONTEXT TIPS (Phase 5, item 25)
 # ============================================================
 
-def check_context_tips(gs):
+def check_context_tips(gs: GameState) -> None:
     """Fire first-encounter tips. Each tip shows exactly once."""
     p = gs.player
     # First enemy adjacent
@@ -1184,7 +1191,7 @@ def check_context_tips(gs):
 # LOOK/EXAMINE MODE (Phase 4, item 23)
 # ============================================================
 
-def look_mode(gs, scr):
+def look_mode(gs: GameState, scr: Any) -> None:
     """Enter cursor mode to examine tiles."""
     if scr is None:
         return
@@ -1227,7 +1234,7 @@ def look_mode(gs, scr):
                 cx, cy = nx, ny
 
 
-def _describe_tile(gs, x, y):
+def _describe_tile(gs: GameState, x: int, y: int) -> str:
     """Return description string for tile at (x, y)."""
     if not (0 <= x < MAP_W and 0 <= y < MAP_H):
         return "Out of bounds"
@@ -1271,7 +1278,7 @@ def _describe_tile(gs, x, y):
 # AUTO-FIGHT (Phase 4, item 20)
 # ============================================================
 
-def auto_fight_step(gs):
+def auto_fight_step(gs: GameState) -> bool | None:
     """Execute one step of auto-fight. Returns True if a turn was spent, None to stop."""
     p = gs.player
     # Stop conditions
@@ -1323,7 +1330,7 @@ def auto_fight_step(gs):
 # AUTO-EXPLORE (Phase 4, item 21)
 # ============================================================
 
-def auto_explore_step(gs):
+def auto_explore_step(gs: GameState) -> bool | None:
     """Execute one step of auto-explore using BFS. Returns True if turn spent, None to stop."""
     p = gs.player
     # Stop conditions
@@ -1363,7 +1370,7 @@ def auto_explore_step(gs):
     return None
 
 
-def _bfs_unexplored(gs):
+def _bfs_unexplored(gs: GameState) -> tuple[int, int] | None:
     """BFS from player position to find nearest unexplored walkable tile."""
     p = gs.player
     visited = set()
@@ -1390,7 +1397,7 @@ def _bfs_unexplored(gs):
 # REST UNTIL HEALED (Phase 4, item 22)
 # ============================================================
 
-def rest_until_healed(gs, scr):
+def rest_until_healed(gs: GameState, scr: Any) -> int:
     """Skip turns until HP == max_hp. Returns total turns rested."""
     p = gs.player
     if p.hp >= p.max_hp:
@@ -1435,7 +1442,7 @@ def rest_until_healed(gs, scr):
 # ENHANCED DEATH & VICTORY SCREENS (Phase 6)
 # ============================================================
 
-def show_enhanced_death(scr, gs):
+def show_enhanced_death(scr: Any, gs: GameState) -> None:
     """Enhanced death screen with full statistics (Phase 6, item 27)."""
     # Flush any buffered keypresses so death screen isn't dismissed instantly
     scr.nodelay(True)
@@ -1517,7 +1524,7 @@ def show_enhanced_death(scr, gs):
             break
 
 
-def show_enhanced_victory(scr, gs):
+def show_enhanced_victory(scr: Any, gs: GameState) -> None:
     """Enhanced victory screen with celebration art (Phase 6, item 28)."""
     p = gs.player
     elapsed = int(time.time() - gs.start_time)

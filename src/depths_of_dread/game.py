@@ -12,6 +12,7 @@ Controls: WASD / Arrows / hjklyubn (vi keys)
   f: Fire projectile (then direction)
   z: Cast spell
 """
+from __future__ import annotations
 
 import curses
 import random
@@ -20,6 +21,11 @@ import sys
 import os
 from collections import deque
 import argparse
+from typing import Any, TYPE_CHECKING
+
+if TYPE_CHECKING:
+    from .entities import Item, Player, ShopItem
+    from .persistence import SessionRecorder
 
 # --- Constants (data layer — wildcard import is intentional) ---
 from .constants import *  # noqa: F403 — constants are the shared data layer
@@ -104,7 +110,7 @@ from .bot import (
 # ============================================================
 
 class GameState:
-    def __init__(self, headless=False, seed=None, player_class=None, difficulty="normal"):
+    def __init__(self, headless: bool = False, seed: int | None = None, player_class: str | None = None, difficulty: str = "normal") -> None:
         self.seed = seed if seed is not None else random.randint(0, 2**32 - 1)
         random.seed(self.seed)
         self.difficulty = difficulty
@@ -165,26 +171,26 @@ class GameState:
         for i, eff in enumerate(SCROLL_EFFECTS):
             self.scroll_ids[eff] = labels[i]
 
-    def msg(self, text, color=C_WHITE):
+    def msg(self, text: str, color: int = C_WHITE) -> None:
         self.messages.append((text, color))
 
-    def generate_floor(self, floor_num):
+    def generate_floor(self, floor_num: int) -> None:
         """Delegate to floor_gen module."""
         generate_floor(self, floor_num)
 
-    def _find_spawn_pos(self):
+    def _find_spawn_pos(self) -> tuple[int, int] | None:
         from .floor_gen import _find_spawn_pos
         return _find_spawn_pos(self)
 
-    def _random_item(self, x, y, floor_num):
+    def _random_item(self, x: int, y: int, floor_num: int) -> Item | None:
         from .floor_gen import _random_item
         return _random_item(self, x, y, floor_num)
 
-    def _get_active_branch(self, floor_num):
+    def _get_active_branch(self, floor_num: int) -> str | None:
         from .floor_gen import _get_active_branch
         return _get_active_branch(self, floor_num)
 
-    def get_shop_at(self, x, y):
+    def get_shop_at(self, x: int, y: int) -> tuple[tuple[int, int, int, int], list[ShopItem]] | None:
         for room, items in self.shops:
             rx, ry, rw, rh = room
             if rx <= x < rx+rw and ry <= y < ry+rh:
@@ -197,7 +203,7 @@ class GameState:
 # ============================================================
 # (floor generation logic is now in floor_gen.py)
 
-def show_class_select(scr):
+def show_class_select(scr: Any) -> str | None:
     """Show class selection screen. Returns class key or None for classless."""
     scr.erase()
     safe_addstr(scr, 1, 20, "CHOOSE YOUR CLASS", curses.color_pair(C_TITLE) | curses.A_BOLD)
@@ -230,7 +236,7 @@ def show_class_select(scr):
             return None
 
 
-def _show_branch_choice(scr, gs, floor_num):
+def _show_branch_choice(scr: Any, gs: GameState, floor_num: int) -> str | None:
     """Show branch selection screen (curses UI) when descending to a branch floor."""
     if floor_num not in BRANCH_CHOICES:
         return None
@@ -290,7 +296,7 @@ def _show_branch_choice(scr, gs, floor_num):
             return branch_b_key
 
 
-def _choose_branch_headless(gs, floor_num):
+def _choose_branch_headless(gs: GameState, floor_num: int) -> str | None:
     """Auto-choose a branch for bot/headless modes (random pick)."""
     if floor_num not in BRANCH_CHOICES:
         return None
@@ -301,7 +307,7 @@ def _choose_branch_headless(gs, floor_num):
     return choice
 
 
-def _init_new_game(gs):
+def _init_new_game(gs: GameState) -> None:
     """Set up starter gear for a new game."""
     pc = gs.player.player_class
     if pc == "warrior":
@@ -382,7 +388,7 @@ def _init_new_game(gs):
 
 # ---- Command handlers (each takes gs, scr; returns bool|None for turn_spent) ----
 
-def _cmd_descend(gs, scr):
+def _cmd_descend(gs: GameState, scr: Any) -> bool | None:
     if gs.player.floor == MAX_FLOORS:
         boss_alive = any(e.boss and e.etype == "abyssal_horror" and e.is_alive()
                          for e in gs.enemies)
@@ -412,7 +418,7 @@ def _cmd_descend(gs, scr):
     return None
 
 
-def _cmd_ascend(gs, scr):
+def _cmd_ascend(gs: GameState, scr: Any) -> bool | None:
     if gs.tiles[gs.player.y][gs.player.x] == T_STAIRS_UP:
         if gs.player.floor > 1:
             new_floor = gs.player.floor - 1
@@ -427,7 +433,7 @@ def _cmd_ascend(gs, scr):
     return None
 
 
-def _cmd_wait(gs, scr):
+def _cmd_wait(gs: GameState, scr: Any) -> bool:
     p = gs.player
     if p.hp < p.max_hp and p.hunger > B["rest_hunger_threshold"]:
         p.hp = min(p.max_hp, p.hp + B["rest_hp_per_turn"])
@@ -435,7 +441,7 @@ def _cmd_wait(gs, scr):
     return True
 
 
-def _cmd_pray(gs, scr):
+def _cmd_pray(gs: GameState, scr: Any) -> bool | None:
     if gs.tiles[gs.player.y][gs.player.x] == T_SHRINE:
         pray_at_shrine(gs)
         return True
@@ -443,7 +449,7 @@ def _cmd_pray(gs, scr):
     return None
 
 
-def _cmd_interact(gs, scr):
+def _cmd_interact(gs: GameState, scr: Any) -> bool | None:
     px, py = gs.player.x, gs.player.y
     if gs.tiles[py][px] == T_ALCHEMY_TABLE:
         return use_alchemy_table(gs)
@@ -465,7 +471,7 @@ def _cmd_interact(gs, scr):
     return None
 
 
-def _cmd_enchant(gs, scr):
+def _cmd_enchant(gs: GameState, scr: Any) -> bool | None:
     px, py = gs.player.x, gs.player.y
     if gs.tiles[py][px] == T_ENCHANT_ANVIL:
         return enchant_weapon_headless(gs)
@@ -473,7 +479,7 @@ def _cmd_enchant(gs, scr):
     return None
 
 
-def _cmd_toggle_torch(gs, scr):
+def _cmd_toggle_torch(gs: GameState, scr: Any) -> None:
     p = gs.player
     if p.torch_fuel <= 0:
         has_torches = any(i.item_type == "torch" for i in p.inventory)
@@ -490,7 +496,7 @@ def _cmd_toggle_torch(gs, scr):
     return None
 
 
-def _cmd_quit(gs, scr):
+def _cmd_quit(gs: GameState, scr: Any) -> None:
     scr.erase()
     safe_addstr(scr, 10, 20, "Save and quit? (y/n/c)", curses.color_pair(C_YELLOW))
     safe_addstr(scr, 12, 20, "y=Save & Quit  n=Quit without saving  c=Cancel",
@@ -511,20 +517,20 @@ def _cmd_quit(gs, scr):
     return None
 
 
-def _cmd_auto_fight(gs, scr):
+def _cmd_auto_fight(gs: GameState, scr: Any) -> None:
     gs.auto_fighting = True
     gs.auto_fight_target = None
     gs.msg("Auto-fighting...", C_YELLOW)
     return None
 
 
-def _cmd_auto_explore(gs, scr):
+def _cmd_auto_explore(gs: GameState, scr: Any) -> None:
     gs.auto_exploring = True
     gs.msg("Exploring...", C_YELLOW)
     return None
 
 
-def _cmd_pickup(gs, scr):
+def _cmd_pickup(gs: GameState, scr: Any) -> bool:
     pickup = [i for i in gs.items if i.x == gs.player.x and i.y == gs.player.y]
     for item in pickup:
         if item.item_type == "gold":
@@ -596,7 +602,7 @@ COMMAND_HANDLERS = {
 }
 
 
-def game_loop(scr):
+def game_loop(scr: Any) -> None:
     """Main game loop. Handles input, rendering, and game state updates."""
     curses.curs_set(0)
     scr.nodelay(False)
@@ -843,7 +849,7 @@ def game_loop(scr):
                 break
 
 
-def main(stdscr=None):
+def main(stdscr: Any | None = None) -> None:
     if stdscr is None:
         curses.wrapper(game_loop)
     else:
@@ -856,7 +862,7 @@ def main(stdscr=None):
 # TESTS
 # ============================================================
 
-def test_connectivity(n=50):
+def test_connectivity(n: int = 50) -> bool:
     print(f"[1] Dungeon Connectivity ({n} dungeons)...")
     fails = 0
     for _ in range(n):
@@ -871,7 +877,7 @@ def test_connectivity(n=50):
     return fails == 0
 
 
-def test_enemies():
+def test_enemies() -> bool:
     print("[2] Enemy Spawning...")
     gs = GameState()
     seen = set()
@@ -889,7 +895,7 @@ def test_enemies():
     return True
 
 
-def test_items():
+def test_items() -> bool:
     print("[3] Item Generation...")
     gs = GameState()
     seen = set()
@@ -910,7 +916,7 @@ def test_items():
     return True
 
 
-def run_tests():
+def run_tests() -> bool:
     print("=" * 50)
     print("DEPTHS OF DREAD - Test Suite")
     print("=" * 50)
@@ -923,7 +929,7 @@ def run_tests():
     return all([t1, t2, t3])
 
 
-def _parse_args():
+def _parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(
         description="Depths of Dread - A Terminal Roguelike",
         epilog="Controls: WASD/Arrows/hjkl to move. ? for in-game help. Q to save & quit.")

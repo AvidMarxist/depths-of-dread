@@ -1,13 +1,21 @@
+from __future__ import annotations
+
 import random
 import curses
+from typing import Any, TYPE_CHECKING
+
 from .constants import *
 from .entities import Item, Enemy, Player
 from .mapgen import astar, _has_los, compute_fov
 from .combat import (sound_alert, _award_kill, _check_levelups, _compute_noise,
                      player_attack, _check_traps_on_move, _passive_trap_detect)
 
+if TYPE_CHECKING:
+    from collections.abc import Callable
+    from .game import GameState
 
-def _get_render_game():
+
+def _get_render_game() -> Callable[..., None]:
     from .game import render_game
     return render_game
 
@@ -16,7 +24,7 @@ def _get_render_game():
 # ITEM USE
 # ============================================================
 
-def use_potion(gs, item):
+def use_potion(gs: GameState, item: Item) -> None:
     p = gs.player
     eff = item.data["effect"]
     p.potions_drunk += 1
@@ -69,7 +77,7 @@ def use_potion(gs, item):
     p.inventory.remove(item)
 
 
-def use_scroll(gs, item):
+def use_scroll(gs: GameState, item: Item) -> None:
     p = gs.player
     eff = item.data["effect"]
     p.scrolls_read += 1
@@ -151,7 +159,7 @@ def use_scroll(gs, item):
     p.inventory.remove(item)
 
 
-def use_food(gs, item):
+def use_food(gs: GameState, item: Item) -> None:
     p = gs.player
     n = item.data.get("nutrition", 20)
     p.hunger = min(100, p.hunger + n)
@@ -168,7 +176,7 @@ def use_food(gs, item):
     p.inventory.remove(item)
 
 
-def pray_at_shrine(gs):
+def pray_at_shrine(gs: GameState) -> None:
     p = gs.player
     roll = random.random()
     threshold_heal = B["shrine_full_heal_chance"]
@@ -204,7 +212,7 @@ def pray_at_shrine(gs):
     gs.tiles[p.y][p.x] = T_FLOOR
 
 
-def process_status(gs):
+def process_status(gs: GameState) -> None:
     expired = []
     p = gs.player
     for eff, turns in list(p.status_effects.items()):
@@ -282,7 +290,7 @@ def process_status(gs):
         p.ability_cooldown -= 1
 
 
-def _process_branch_effects(gs):
+def _process_branch_effects(gs: GameState) -> None:
     """Apply environmental effects based on active branch."""
     p = gs.player
     branch = gs.active_branch
@@ -371,7 +379,7 @@ def _process_branch_effects(gs):
 # PROJECTILES
 # ============================================================
 
-def _get_direction_delta(key):
+def _get_direction_delta(key: int) -> tuple[int, int] | None:
     """Convert a key to a (dx, dy) direction for projectiles/spells.
     Supports cardinal AND diagonal directions (yubn vi keys)."""
     DIR_KEYS = {
@@ -388,7 +396,7 @@ def _get_direction_delta(key):
     return DIR_KEYS.get(key)
 
 
-def _animate_projectile(gs, path, char='*', color=C_YELLOW):
+def _animate_projectile(gs: GameState, path: list[tuple[int, int]], char: str = '*', color: int = C_YELLOW) -> None:
     """Briefly flash the projectile along its path (skip in headless)."""
     if gs._headless or not gs._scr:
         return
@@ -408,7 +416,7 @@ def _animate_projectile(gs, path, char='*', color=C_YELLOW):
                 pass
 
 
-def _animate_blast(gs, cx, cy, radius, char='*', color=C_RED):
+def _animate_blast(gs: GameState, cx: int, cy: int, radius: int, char: str = '*', color: int = C_RED) -> None:
     """Flash an AoE blast area for visual feedback (skip in headless)."""
     if gs._headless or not gs._scr:
         return
@@ -433,7 +441,7 @@ def _animate_blast(gs, cx, cy, radius, char='*', color=C_RED):
         pass
 
 
-def fire_projectile(gs, scr):
+def fire_projectile(gs: GameState, scr: Any) -> bool:
     """Handle 'f' key — fire arrows, throw daggers, or zap wands."""
     p = gs.player
     # Determine what to fire
@@ -484,7 +492,7 @@ def fire_projectile(gs, scr):
     return _launch_projectile(gs, dx, dy, proj_type, proj_item)
 
 
-def fire_projectile_headless(gs, dx, dy):
+def fire_projectile_headless(gs: GameState, dx: int, dy: int) -> bool:
     """Fire projectile in headless mode (for testing)."""
     p = gs.player
     # Determine what to fire (same priority)
@@ -501,7 +509,7 @@ def fire_projectile_headless(gs, dx, dy):
     return False
 
 
-def _launch_projectile(gs, dx, dy, proj_type, proj_item):
+def _launch_projectile(gs: GameState, dx: int, dy: int, proj_type: str, proj_item: Item) -> bool:
     """Actually fire the projectile along a line."""
     p = gs.player
     p.projectiles_fired += 1
@@ -595,7 +603,7 @@ def _launch_projectile(gs, dx, dy, proj_type, proj_item):
 # SPELLS
 # ============================================================
 
-def cast_spell_menu(gs, scr):
+def cast_spell_menu(gs: GameState, scr: Any) -> bool:
     """Show spell menu, cast selected spell."""
     p = gs.player
     if scr is None:
@@ -635,7 +643,7 @@ def cast_spell_menu(gs, scr):
     return _cast_spell(gs, scr, spell_name, spell_info)
 
 
-def cast_spell_headless(gs, spell_name, direction=None, target_enemy=None):
+def cast_spell_headless(gs: GameState, spell_name: str, direction: tuple[int, int] | None = None, target_enemy: Enemy | None = None) -> bool:
     """Cast a spell in headless mode (for testing)."""
     p = gs.player
     if spell_name not in SPELLS:
@@ -651,7 +659,7 @@ def cast_spell_headless(gs, spell_name, direction=None, target_enemy=None):
     return _cast_spell(gs, None, spell_name, info, direction=direction, target_enemy=target_enemy)
 
 
-def _apply_spell_resist(gs, enemy, dmg, element):
+def _apply_spell_resist(gs: GameState, enemy: Enemy, dmg: int, element: str) -> int:
     """Apply elemental resistance/vulnerability to spell damage on an enemy.
     Returns adjusted damage and whether troll regen was suppressed."""
     if element and element != "physical":
@@ -664,7 +672,7 @@ def _apply_spell_resist(gs, enemy, dmg, element):
     return dmg
 
 
-def _cast_spell(gs, scr, spell_name, spell_info, direction=None, target_enemy=None):
+def _cast_spell(gs: GameState, scr: Any, spell_name: str, spell_info: dict[str, Any], direction: tuple[int, int] | None = None, target_enemy: Enemy | None = None) -> bool:
     """Execute the spell effect."""
     p = gs.player
     p.mana -= spell_info["cost"]
@@ -907,7 +915,7 @@ def _cast_spell(gs, scr, spell_name, spell_info, direction=None, target_enemy=No
 # PLAYER ACTIONS
 # ============================================================
 
-def use_class_ability(gs, scr=None):
+def use_class_ability(gs: GameState, scr: Any = None) -> bool:
     """Activate the player's class-specific ability. Returns True if turn spent."""
     p = gs.player
     if not p.player_class or p.player_class not in CHARACTER_CLASSES:
@@ -1033,7 +1041,7 @@ def use_class_ability(gs, scr=None):
 # CLASS TECHNIQUES (Warrior/Rogue abilities — parallel to spells)
 # ============================================================
 
-def use_technique_menu(gs, scr):
+def use_technique_menu(gs: GameState, scr: Any) -> bool:
     """Show class technique menu, execute selected ability."""
     p = gs.player
     if scr is None:
@@ -1088,7 +1096,7 @@ def use_technique_menu(gs, scr):
     return _execute_ability(gs, scr, ability_name, ability_info)
 
 
-def use_ability_headless(gs, ability_name):
+def use_ability_headless(gs: GameState, ability_name: str) -> bool:
     """Execute a class ability in headless mode (for bot/agent/tests)."""
     p = gs.player
     if ability_name not in p.known_abilities:
@@ -1102,7 +1110,7 @@ def use_ability_headless(gs, ability_name):
     return _execute_ability(gs, None, ability_name, info)
 
 
-def _execute_ability(gs, scr, ability_name, ability_info):
+def _execute_ability(gs: GameState, scr: Any, ability_name: str, ability_info: dict[str, Any]) -> bool:
     """Execute the ability effect. Returns True if turn was spent."""
     p = gs.player
     p.mana -= ability_info["cost"]
@@ -1197,7 +1205,7 @@ def _execute_ability(gs, scr, ability_name, ability_info):
     return False
 
 
-def _journal_potion_desc(eff):
+def _journal_potion_desc(eff: str) -> str:
     """Return short description for journal entry (#6)."""
     return {"Healing": "Restores HP", "Strength": "Boost STR temporarily",
             "Speed": "Boost speed temporarily", "Poison": "Deals damage!",
@@ -1205,13 +1213,13 @@ def _journal_potion_desc(eff):
             "Resistance": "Reduces incoming damage", "Berserk": "Rage mode",
             "Mana": "Restores MP"}.get(eff, eff)
 
-def _journal_scroll_desc(eff):
+def _journal_scroll_desc(eff: str) -> str:
     return {"Identify": "Reveals all items", "Teleport": "Random teleport",
             "Fireball": "AoE fire damage", "Mapping": "Reveals floor map",
             "Enchant": "Upgrades weapon/armor", "Fear": "Scares enemies",
             "Summon": "Summons hostile enemy!", "Lightning": "Zaps nearest enemy"}.get(eff, eff)
 
-def use_alchemy_table(gs):
+def use_alchemy_table(gs: GameState) -> bool:
     """Use alchemy table to identify items and grant alchemical insights."""
     p = gs.player
     pos_key = (p.x, p.y)
@@ -1282,7 +1290,7 @@ def use_alchemy_table(gs):
     gs.alchemy_used.add(pos_key)
     return True
 
-def _toggle_switch(gs, sx, sy):
+def _toggle_switch(gs: GameState, sx: int, sy: int) -> None:
     """Toggle a switch and check puzzle state (#9)."""
     tile = gs.tiles[sy][sx]
     if tile == T_SWITCH_OFF:
@@ -1329,7 +1337,7 @@ def _toggle_switch(gs, sx, sy):
                         gs.items.append(item)
                     gs.msg(f"All plates activated! You find {gold} gold and a reward!", C_GOLD)
 
-def _interact_pedestal(gs, px, py):
+def _interact_pedestal(gs: GameState, px: int, py: int) -> bool:
     """Light a pedestal (costs torch fuel) (#9)."""
     if gs.tiles[py][px] != T_PEDESTAL_UNLIT:
         return False
@@ -1383,7 +1391,7 @@ def _interact_pedestal(gs, px, py):
                     return False
     return True
 
-def enchant_weapon_headless(gs):
+def enchant_weapon_headless(gs: GameState) -> bool:
     """Apply a random enchantment to the player's equipped weapon (headless)."""
     p = gs.player
     if gs.tiles[p.y][p.x] != T_ENCHANT_ANVIL:
@@ -1413,7 +1421,7 @@ def enchant_weapon_headless(gs):
     return True
 
 
-def _interact_npc(gs, npc):
+def _interact_npc(gs: GameState, npc: dict[str, Any]) -> None:
     """Handle NPC encounter interaction."""
     npc["interacted"] = True
     gs.msg(f'{npc["name"]}: "{npc["dialogue"]}"', C_YELLOW)
@@ -1467,7 +1475,7 @@ def _interact_npc(gs, npc):
         gs.msg(f"The merchant spreads out {count} items for you!", C_GOLD)
 
 
-def show_journal(scr, gs):
+def show_journal(scr: Any, gs: GameState) -> None:
     """Display journal of identified items (#6)."""
     scr.nodelay(True)
     while scr.getch() != -1:
@@ -1507,7 +1515,7 @@ def show_journal(scr, gs):
     scr.getch()
 
 
-def player_move(gs, dx, dy):
+def player_move(gs: GameState, dx: int, dy: int) -> bool:
     p = gs.player
     # Confusion: random movement direction
     if "Confusion" in p.status_effects:
