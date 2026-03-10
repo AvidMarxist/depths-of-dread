@@ -16,6 +16,7 @@ from typing import TYPE_CHECKING, Any
 
 from .combat import player_attack, process_enemies
 from .constants import *
+from .constants import _floor_theme_name, _get_theme_pairs
 from .entities import Item, Player
 from .mapgen import _has_los, astar, compute_fov
 
@@ -57,7 +58,8 @@ def render_map(scr: Any, gs: GameState) -> None:
                 gs.explored[my][mx] = True
 
             if mx == p.x and my == p.y:
-                safe_addstr(scr, sy, sx, '@', curses.color_pair(C_PLAYER) | curses.A_BOLD)
+                player_pair = C_PLAYER_256 if HAS_256_COLORS else C_PLAYER
+                safe_addstr(scr, sy, sx, '@', curses.color_pair(player_pair) | curses.A_BOLD)
                 continue
 
             # Enemy
@@ -70,8 +72,9 @@ def render_map(scr: Any, gs: GameState) -> None:
                 if enemy_here:
                     if enemy_here.disguised:
                         # Disguised mimic looks like gold
+                        gold_pair = C_GOLD_256 if HAS_256_COLORS else C_GOLD
                         safe_addstr(scr, sy, sx, '$',
-                                   curses.color_pair(C_GOLD) | curses.A_BOLD)
+                                   curses.color_pair(gold_pair) | curses.A_BOLD)
                     elif enemy_here.alertness == "asleep":
                         # Asleep enemies render with 'z' and dim
                         safe_addstr(scr, sy, sx, 'z',
@@ -100,15 +103,66 @@ def render_map(scr: Any, gs: GameState) -> None:
 
             # Tiles
             if in_fov:
-                _draw_tile(scr, sy, sx, gs.tiles[my][mx], True, p.floor)
+                _draw_tile(scr, sy, sx, gs.tiles[my][mx], True, p.floor, gs.active_branch)
             elif gs.explored[my][mx]:
-                _draw_tile(scr, sy, sx, gs.tiles[my][mx], False, p.floor)
+                _draw_tile(scr, sy, sx, gs.tiles[my][mx], False, p.floor, gs.active_branch)
             else:
                 safe_addstr(scr, sy, sx, ' ')
 
 
-def _draw_tile(scr: Any, sy: int, sx: int, tile: int, lit: bool, floor_num: int) -> None:
+def _draw_tile(scr: Any, sy: int, sx: int, tile: int, lit: bool, floor_num: int,
+               active_branch: str | None = None) -> None:
     ch = TILE_CHARS.get(tile, ' ')
+
+    # 256-color themed rendering
+    if HAS_256_COLORS:
+        theme = _floor_theme_name(floor_num, active_branch)
+        wall_p, wall_dim_p, floor_p, floor_dim_p = _get_theme_pairs(theme)
+        if lit:
+            if tile in (T_WALL, T_SECRET_WALL):
+                a = curses.color_pair(wall_p)
+            elif tile in (T_FLOOR, T_CORRIDOR, T_SHOP_FLOOR, T_TRAP_HIDDEN):
+                a = curses.color_pair(floor_p) | curses.A_DIM
+            elif tile == T_DOOR:
+                a = curses.color_pair(C_YELLOW) | curses.A_BOLD
+            elif tile in (T_STAIRS_DOWN, T_STAIRS_UP):
+                a = curses.color_pair(C_YELLOW) | curses.A_BOLD
+            elif tile == T_WATER:
+                a = curses.color_pair(C_WATER_256) | curses.A_BOLD
+            elif tile == T_LAVA:
+                a = curses.color_pair(C_LAVA_256) | curses.A_BOLD
+            elif tile == T_FOUNTAIN:
+                a = curses.color_pair(C_WATER_256) | curses.A_BOLD
+            elif tile == T_SHRINE:
+                a = curses.color_pair(C_SHRINE) | curses.A_BOLD
+            elif tile == T_ALCHEMY_TABLE:
+                a = curses.color_pair(C_CYAN) | curses.A_BOLD
+            elif tile == T_WALL_TORCH:
+                a = curses.color_pair(C_GOLD_256) | curses.A_BOLD
+            elif tile in (T_PEDESTAL_UNLIT, T_SWITCH_OFF):
+                a = curses.color_pair(wall_dim_p)
+            elif tile in (T_PEDESTAL_LIT, T_SWITCH_ON):
+                a = curses.color_pair(C_GOLD_256) | curses.A_BOLD
+            elif tile == T_STAIRS_LOCKED:
+                a = curses.color_pair(C_RED) | curses.A_BOLD
+            elif tile == T_TRAP_VISIBLE:
+                a = curses.color_pair(C_RED) | curses.A_BOLD
+            elif tile == T_ENCHANT_ANVIL:
+                a = curses.color_pair(C_CYAN) | curses.A_BOLD
+            else:
+                a = curses.color_pair(floor_p)
+        else:
+            # Explored but not in FOV
+            if tile in (T_WALL, T_SECRET_WALL):
+                a = curses.color_pair(wall_dim_p)
+            elif tile in (T_STAIRS_DOWN, T_STAIRS_UP):
+                a = curses.color_pair(C_YELLOW) | curses.A_DIM
+            else:
+                a = curses.color_pair(floor_dim_p)
+        safe_addstr(scr, sy, sx, ch, a)
+        return
+
+    # Fallback: standard 16-color rendering
     if lit:
         if tile == T_WALL:
             if floor_num <= 3:
@@ -146,7 +200,6 @@ def _draw_tile(scr: Any, sy: int, sx: int, tile: int, lit: bool, floor_num: int)
         elif tile == T_FOUNTAIN:
             a = curses.color_pair(C_WATER) | curses.A_BOLD
         elif tile == T_SECRET_WALL:
-            # Render exactly like T_WALL — indistinguishable
             if floor_num <= 3:
                 a = curses.color_pair(C_WHITE) | curses.A_DIM
             elif floor_num <= 6:
@@ -158,7 +211,7 @@ def _draw_tile(scr: Any, sy: int, sx: int, tile: int, lit: bool, floor_num: int)
             else:
                 a = curses.color_pair(C_MAGENTA) | curses.A_DIM
         elif tile == T_TRAP_HIDDEN:
-            a = curses.color_pair(C_WHITE) | curses.A_DIM  # Looks like floor
+            a = curses.color_pair(C_WHITE) | curses.A_DIM
         elif tile == T_TRAP_VISIBLE:
             a = curses.color_pair(C_RED) | curses.A_BOLD
         else:

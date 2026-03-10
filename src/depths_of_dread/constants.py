@@ -711,14 +711,74 @@ C_SHRINE: int = 16
 _CHALLENGE_MODES: dict[str, bool] = {"ironman": False, "speedrun": False, "pacifist": False, "dark": False}
 
 HAS_COLORS: bool = True  # set at runtime by init_colors
+HAS_256_COLORS: bool = False  # set at runtime by init_colors
+
+# ---- 256-color themed palettes ----
+# Each theme defines 4 color pair indices: wall_lit, wall_dim, floor_lit, floor_dim
+# These use extended 256-color indices (16-255):
+#   16-231: 6×6×6 color cube  |  232-255: greyscale ramp (232=near-black, 255=near-white)
+_THEME_BASE_PAIR: int = 20  # First pair index for theme colors (4 pairs per theme)
+
+# Theme name → (wall_fg_256, wall_dim_fg_256, floor_fg_256, floor_dim_fg_256)
+THEME_PALETTE_256: dict[str, tuple[int, int, int, int]] = {
+    "Dungeon":           (249, 243, 242, 236),   # Stone grey
+    "Caverns":           (71,  65,  22,  236),    # Mossy green
+    "Catacombs":         (247, 241, 239, 235),    # Bone/ash grey
+    "Hellvault":         (167, 124, 52,  236),    # Fiery red/crimson
+    "Abyss":             (135, 97,  54,  236),    # Deep purple
+    "The Throne of Dread": (196, 124, 52, 234),   # Blood crimson
+    "The Shattered Depths": (69, 25, 24,  233),   # Dark blue
+    "The Void Between":  (60,  23,  17,  232),    # Deep void blue
+    "The Forgotten Realm": (103, 60, 236, 233),   # Ghostly grey-blue
+    "The Final Descent": (242, 236, 234, 232),    # Near-black descent
+    "The Heart of Darkness": (160, 88, 52, 232),  # Crimson/black
+    "Flooded Crypts":    (73,  30,  37,  236),    # Blue-teal
+    "Burning Pits":      (208, 166, 130, 236),    # Orange/flame
+    "Mind Halls":        (177, 133, 97,  236),    # Psychic purple-pink
+    "Beast Warrens":     (143, 101, 95,  236),    # Earthy brown
+    "Fungal Depths":     (149, 106, 64,  236),    # Sickly yellow-green
+    "Trapped Halls":     (247, 241, 239, 236),    # Cold grey
+    "Void Rift":         (141, 99,  62,  233),    # Shifting purple-blue
+    "Infernal Forge":    (202, 160, 94,  234),    # Molten orange
+}
+
+# Extended 256-color pairs for water, lava, and special tiles
+C_WATER_256: int = 0   # Set at runtime
+C_LAVA_256: int = 0    # Set at runtime
+C_GOLD_256: int = 0    # Set at runtime
+C_PLAYER_256: int = 0  # Set at runtime
+
+def _get_theme_pairs(theme_name: str) -> tuple[int, int, int, int]:
+    """Return (wall_pair, wall_dim_pair, floor_pair, floor_dim_pair) for a theme.
+    Falls back to Dungeon if theme not found."""
+    themes = list(THEME_PALETTE_256.keys())
+    if theme_name not in themes:
+        theme_name = "Dungeon"
+    idx = themes.index(theme_name)
+    base = _THEME_BASE_PAIR + idx * 4
+    return (base, base + 1, base + 2, base + 3)
+
+
+def _floor_theme_name(floor_num: int, active_branch: str | None = None) -> str:
+    """Get the visual theme name for a floor, accounting for active branches."""
+    if active_branch and active_branch in BRANCH_DEFS:
+        branch = BRANCH_DEFS[active_branch]
+        if floor_num in branch["floors"]:
+            return branch["theme"]
+    if 1 <= floor_num <= len(THEMES):
+        return THEMES[floor_num - 1]
+    return "Dungeon"
+
 
 def init_colors() -> None:
-    global HAS_COLORS
+    global HAS_COLORS, HAS_256_COLORS
+    global C_WATER_256, C_LAVA_256, C_GOLD_256, C_PLAYER_256
     if not curses.has_colors():
         HAS_COLORS = False
         return
     curses.start_color()
     curses.use_default_colors()
+    # Standard 16-color pairs (always available)
     curses.init_pair(C_WHITE, curses.COLOR_WHITE, -1)
     curses.init_pair(C_RED, curses.COLOR_RED, -1)
     curses.init_pair(C_GREEN, curses.COLOR_GREEN, -1)
@@ -736,6 +796,27 @@ def init_colors() -> None:
     curses.init_pair(C_BOSS, curses.COLOR_RED, -1)
     curses.init_pair(C_SHRINE, curses.COLOR_YELLOW, -1)
     HAS_COLORS = True
+
+    # Extended 256-color pairs (if terminal supports it)
+    if curses.COLORS >= 256:
+        HAS_256_COLORS = True
+        # Theme wall/floor color pairs
+        for i, (theme_name, (wall_fg, wall_dim_fg, floor_fg, floor_dim_fg)) in enumerate(THEME_PALETTE_256.items()):
+            base = _THEME_BASE_PAIR + i * 4
+            curses.init_pair(base, wall_fg, -1)       # wall lit
+            curses.init_pair(base + 1, wall_dim_fg, -1)  # wall dim/unlit
+            curses.init_pair(base + 2, floor_fg, -1)   # floor lit
+            curses.init_pair(base + 3, floor_dim_fg, -1)  # floor dim/unlit
+        # Special extended pairs for water, lava, gold, player
+        special_base = _THEME_BASE_PAIR + len(THEME_PALETTE_256) * 4
+        C_WATER_256 = special_base
+        curses.init_pair(C_WATER_256, 39, -1)     # Rich cyan-blue water
+        C_LAVA_256 = special_base + 1
+        curses.init_pair(C_LAVA_256, 202, -1)     # Orange-red lava
+        C_GOLD_256 = special_base + 2
+        curses.init_pair(C_GOLD_256, 220, -1)     # Rich gold
+        C_PLAYER_256 = special_base + 3
+        curses.init_pair(C_PLAYER_256, 231, 25)   # Bright white on rich blue
 
 
 def safe_color_pair(pair_num: int) -> int:
