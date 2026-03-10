@@ -733,19 +733,74 @@ def _update_boss_phase(gs: GameState, e: Enemy) -> None:
             e.lifesteal = True
 
     elif e.etype == "dread_lord":
+        # --- Phase transitions ---
         if hp_pct <= B["boss_phase3_threshold"] and e.boss_phase < 3:
             e.boss_phase = 3
-            gs.msg("The Dread Lord unleashes a wave of darkness!", C_RED)
-            _bestiary_record(gs, e.etype, "ability", "aoe_darkness")
+            e.ai = "chase"
+            gs.msg("The Dread Lord roars: 'ENOUGH! I will END this in darkness!'", C_RED)
+            gs.msg("The room goes dark!", C_DARK)
+            _bestiary_record(gs, e.etype, "ability", "darkness_arena")
+            # Drain player's torch on phase 3 entry
+            if p.torch_fuel > 0:
+                drain = min(p.torch_fuel, B["dread_phase3_torch_drain"])
+                p.torch_fuel -= drain
+                gs.msg(f"Your torch flickers and dims! (-{drain} fuel)", C_YELLOW)
         elif hp_pct <= B["boss_phase2_threshold"] and e.boss_phase < 2:
             e.boss_phase = 2
-            e.ai = "chase"  # Stop summoning, switch to aggressive chase
-            e.dmg = (e.dmg[0] * 2, e.dmg[1] * 2)
-            gs.msg("The Dread Lord ENRAGES! It charges at you with terrible fury!", C_RED)
-            _bestiary_record(gs, e.etype, "ability", "enrage_charge")
-        # Phase 3: AOE darkness damage to adjacent tiles
-        if e.boss_phase >= 3:
-            if abs(e.x - p.x) + abs(e.y - p.y) <= 2:
+            e.ai = "chase"
+            lo, hi = e.dmg
+            mult = B["dread_phase2_dmg_mult"]
+            e.dmg = (int(lo * mult), int(hi * mult))
+            gs.msg("The Dread Lord snarls: 'You think you can kill ME?'", C_RED)
+            gs.msg("Shadows coalesce around the Dread Lord!", C_DARK)
+            _bestiary_record(gs, e.etype, "ability", "shadow_strike")
+
+        # --- Phase 1: Summoner + psychological taunts ---
+        if e.boss_phase == 1:
+            if e.boss_phase_turn % B["dread_taunt_interval"] == 0 and e.boss_phase_turn > 0:
+                taunts = [
+                    "The Dread Lord whispers: 'I've killed hundreds like you.'",
+                    "The Dread Lord laughs: 'Your torch won't save you.'",
+                    "The Dread Lord hisses: 'Every step brings you closer to nothing.'",
+                    "The Dread Lord murmurs: 'They all fight. They all fall.'",
+                    "The Dread Lord sighs: 'Another hero. How tedious.'",
+                    "The Dread Lord growls: 'Your fear feeds me.'",
+                ]
+                gs.msg(random.choice(taunts), C_DARK)
+
+        # --- Phase 2: Shadow Strike — teleport behind player, attack, reposition ---
+        elif e.boss_phase == 2:
+            if e.boss_phase_turn % B["dread_phase2_teleport_interval"] == 0:
+                # Find a tile adjacent to the player to teleport to
+                adj_tiles = []
+                for dx, dy in [(-1, 0), (1, 0), (0, -1), (0, 1), (-1, -1), (1, -1), (-1, 1), (1, 1)]:
+                    tx, ty = p.x + dx, p.y + dy
+                    if (0 < tx < MAP_W - 1 and 0 < ty < MAP_H - 1
+                            and gs.tiles[ty][tx] in (T_FLOOR, T_CORRIDOR)):
+                        occupied = any(en.x == tx and en.y == ty and en.is_alive() for en in gs.enemies if en is not e)
+                        if not occupied:
+                            adj_tiles.append((tx, ty))
+                if adj_tiles:
+                    tx, ty = random.choice(adj_tiles)
+                    e.x, e.y = tx, ty
+                    gs.msg("The Dread Lord vanishes and reappears behind you!", C_RED)
+                    _bestiary_record(gs, e.etype, "ability", "shadow_strike")
+            # Periodically summon wraiths
+            if e.boss_phase_turn % B["dread_phase2_summon_interval"] == 0 and e.boss_phase_turn > 0:
+                if len(gs.enemies) < B["max_enemies_on_floor"]:
+                    pos = gs._find_spawn_pos()
+                    if pos:
+                        wraith = Enemy(pos[0], pos[1], "wraith")
+                        wraith.alerted = True
+                        wraith.alertness = "alert"
+                        gs.enemies.append(wraith)
+                        gs.msg("A Wraith materializes from the shadows!", C_CYAN)
+
+        # --- Phase 3: Darkness Arena — AOE, summon shadow clones, torch drain ---
+        elif e.boss_phase >= 3:
+            # AOE darkness damage in range
+            dist = abs(e.x - p.x) + abs(e.y - p.y)
+            if dist <= B["dread_phase3_aoe_range"]:
                 aoe_dmg = B["dread_phase3_aoe_damage"]
                 p.hp -= aoe_dmg
                 p.damage_taken += aoe_dmg
@@ -755,6 +810,30 @@ def _update_boss_phase(gs: GameState, e: Enemy) -> None:
                     gs.game_over = True
                     gs.death_cause = f"consumed by {e.name}'s darkness"
                     sound_alert(gs, "death")
+            # Summon shadow wraiths periodically
+            if e.boss_phase_turn % B["dread_phase3_summon_interval"] == 0 and e.boss_phase_turn > 0:
+                if len(gs.enemies) < B["max_enemies_on_floor"]:
+                    pos = gs._find_spawn_pos()
+                    if pos:
+                        shadow = Enemy(pos[0], pos[1], "wraith")
+                        shadow.alerted = True
+                        shadow.alertness = "alert"
+                        gs.enemies.append(shadow)
+                        if (pos[0], pos[1]) in gs.visible:
+                            gs.msg("A shadow coalesces into form!", C_DARK)
+            # Shadow strike teleport (faster in phase 3)
+            if e.boss_phase_turn % 2 == 0:
+                adj_tiles = []
+                for dx, dy in [(-1, 0), (1, 0), (0, -1), (0, 1)]:
+                    tx, ty = p.x + dx, p.y + dy
+                    if (0 < tx < MAP_W - 1 and 0 < ty < MAP_H - 1
+                            and gs.tiles[ty][tx] in (T_FLOOR, T_CORRIDOR)):
+                        occupied = any(en.x == tx and en.y == ty and en.is_alive() for en in gs.enemies if en is not e)
+                        if not occupied:
+                            adj_tiles.append((tx, ty))
+                if adj_tiles:
+                    tx, ty = random.choice(adj_tiles)
+                    e.x, e.y = tx, ty
 
     # Mini-boss phases (2 phases: normal and enraged)
     elif e.etype in ("crypt_guardian", "flame_tyrant", "elder_brain", "beast_lord"):

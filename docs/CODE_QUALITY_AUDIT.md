@@ -1,6 +1,6 @@
 # Depths of Dread — Code Quality Audit
 
-**Date:** 2026-03-08 (initial) | **Updated:** 2026-03-10
+**Date:** 2026-03-08 (initial) | **Updated:** 2026-03-10 (v1.0)
 **Codebase:** ~11,900 source lines | 6,328 test lines | 13 source modules | 474 tests across 10 test files
 
 ---
@@ -9,23 +9,23 @@
 
 Depths of Dread is a well-structured Python roguelike with strong fundamentals: clean layered architecture, zero circular dependencies, comprehensive test coverage across all ISO 25010 dimensions, and a solid data-driven design.
 
-**Update (Mar 10):** Two refactoring passes addressed all Tier 1 and Tier 2 issues from the original audit. The codebase now has full type hint coverage, dispatch patterns replacing all oversized if/elif chains, a custom exception hierarchy, extracted modules (bot → bot/agent/agent_ui, GameState → floor_gen), per-module test files, 93 magic numbers extracted into BALANCE dict, and ruff + mypy running clean. Visual upgrade: 256-color themed palettes (19 floor themes) with unicode tile characters and automatic fallback. Bot improvements: puzzle-solving AI for locked stairs, structured JSON batch output.
+**v1.0 (Mar 10):** Two refactoring passes addressed all Tier 1 and Tier 2 issues from the original audit. The codebase now has full type hint coverage, dispatch patterns replacing all oversized if/elif chains, a custom exception hierarchy, extracted modules (bot → bot/agent/agent_ui, GameState → floor_gen), per-module test files, 93 magic numbers extracted into BALANCE dict, and ruff + mypy running clean. Visual upgrade: 256-color themed palettes (19 floor themes) with unicode tile characters and automatic fallback. Bot improvements: puzzle-solving AI for locked stairs, structured JSON batch output. Polish pass: 30 floor-appropriate environmental vignettes with map rendering, multi-phase Dread Lord boss fight (taunts → shadow strikes → darkness arena), test-quick.sh unified test runner.
 
 ### Scorecard
 
-| Category | Score (Mar 8) | Score (Mar 10) | What Changed |
+| Category | Score (Mar 8) | Score (v1.0) | What Changed |
 |----------|:-----:|:-----:|---------|
 | Architecture & Structure | 7/10 | **9/10** | GameState split, bot.py split into 3 files, 13 clean modules |
 | Code Quality | 5/10 | **8/10** | Dispatch dicts, 93 magic numbers extracted, ruff enforced |
 | Design Patterns | 7/10 | **8/10** | Command dispatch, spell dispatch, layered bot decisions |
 | Error Handling | 4/10 | **6/10** | Custom exception hierarchy, specific except clauses |
-| Testing | 8/10 | **9/10** | Split into 10 per-module files + shared conftest.py |
+| Testing | 8/10 | **9/10** | Split into 10 per-module files + shared conftest.py + test-quick.sh |
 | Performance | 7/10 | 7/10 | No change |
-| Documentation | 3/10 | **6/10** | 100% type hints, updated README, audit docs |
+| Documentation | 3/10 | **7/10** | 100% type hints, README, audit docs, feature inventory |
 | Security | 7/10 | 7/10 | No change |
 | Maintainability | 5/10 | **8/10** | Explicit imports, dispatch patterns, modular tests, lint baseline |
 | Python Modernism | 4/10 | **7/10** | Full type hints, ruff + mypy clean, modern import style |
-| **Overall** | **5.7/10** | **7.5/10** | **Two refactoring passes, all Tier 1+2 items complete** |
+| **Overall** | **5.7/10** | **7.6/10** | **All Tier 1+2 complete, polish pass, tagged v1.0** |
 
 ---
 

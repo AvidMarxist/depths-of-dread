@@ -13,7 +13,7 @@ authors = [
     {name = "Will Rompf"},
 ]
 classifiers = [
-    "Development Status :: 4 - Beta",
+    "Development Status :: 5 - Production/Stable",
     "Environment :: Console :: Curses",
     "Intended Audience :: End Users/Desktop",
     "License :: OSI Approved :: MIT License",

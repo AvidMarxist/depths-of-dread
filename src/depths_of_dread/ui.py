@@ -101,6 +101,18 @@ def render_map(scr: Any, gs: GameState) -> None:
                                curses.color_pair(item_here.color) | curses.A_BOLD)
                     continue
 
+            # Vignettes (show char on map before player steps on them)
+            if in_fov:
+                vig_here = None
+                for vig in gs.vignettes:
+                    if vig["x"] == mx and vig["y"] == my and not vig["examined"]:
+                        vig_here = vig
+                        break
+                if vig_here:
+                    safe_addstr(scr, sy, sx, '?',
+                               curses.color_pair(C_MAGENTA) | curses.A_BOLD)
+                    continue
+
             # Tiles
             if in_fov:
                 _draw_tile(scr, sy, sx, gs.tiles[my][mx], True, p.floor, gs.active_branch)

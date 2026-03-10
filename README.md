@@ -9,9 +9,9 @@
 
 # Depths of Dread
 
-**A terminal roguelike dungeon crawler with Claude-powered AI agents.**
+**A terminal roguelike dungeon crawler with Claude-powered AI agents. v1.0.**
 
-Descend 20 floors of procedurally generated dungeons. Fight 30+ enemy types and 5 bosses. Choose your class, solve puzzles, brew alchemy, and survive — or watch an AI do it for you.
+Descend 20 floors of procedurally generated dungeons. Fight 30+ enemy types and 8 bosses with multi-phase fights. Choose your class, solve puzzles, brew alchemy, and survive — or watch an AI do it for you.
 
 Built entirely in Python with zero external dependencies. Runs in any terminal.
 
@@ -47,9 +47,11 @@ In Agent mode, press **Shift+P** to enter **Pilot Mode** — take manual control
 - **Rogue** — stealth bonuses, Backstab (2x crit), Poison Blade, Smoke Bomb
 
 ### Enemies & Bosses
-- 19 enemy types with unique AI behaviors (mimic, phase spider, mind flayer, etc.)
-- 3 main bosses: Ogre King (F5), Vampire Lord (F10), Dread Lord (F15)
+- 30+ enemy types with 9 unique AI behaviors (mimic, phase spider, mind flayer, summoner, etc.)
+- 3 main bosses with multi-phase fights: Ogre King (F5), Vampire Lord (F10), Dread Lord (F15)
+- Abyssal Horror (F20) — the true final boss with void AOE and shadow summons
 - 4 branch mini-bosses: Crypt Guardian, Flame Tyrant, Elder Brain, Beast Lord
+- **Dread Lord phases** — taunting summoner → shadow strike teleports → darkness arena (drains your torch, summons wraiths)
 - **Monster fleeing** — wounded enemies retreat (undead and bosses fight to death)
 
 ### Dungeon Branches
@@ -80,18 +82,20 @@ In Agent mode, press **Shift+P** to enter **Pilot Mode** — take manual control
 - Enemies trigger traps too — lure them over!
 
 ### Other Systems
+- **Environmental vignettes** — 30 atmospheric encounters (fallen adventurers, whispering bones, shadow gardens) with floor-appropriate lore and loot
 - **Bestiary** (press M) — progressive reveal based on encounter count
 - **Puzzle system** — torch pedestals, switches, locked stairs
 - **Alchemy tables** — identify unknown potions, scrolls, and rings; grant alchemical boons
 - **Fountains** — magical healing waters, chance of permanent +1 max HP
 - **Secret rooms** — hidden chambers behind walls, search (/) to discover, contain valuable loot
 - **Journal** — tracks discovered item effects
-- **Boss weapon drops** — Vampiric Blade with 20% lifesteal
+- **Boss weapon drops** — Vampiric Blade with 20% lifesteal, Void Reaver (tier 6)
 - **Shops** — spend gold on items mid-dungeon
 - **Shrines** — pray for boons (some are cursed)
 - **Wall torches** — grab for torch fuel
+- **Challenge modes** — Ironman (permadeath), Speedrun (floor timer), Pacifist, Dark (reduced torch)
 - **Difficulty modes** — easy, normal, hard (--difficulty flag)
-- **Mana potions** — restore MP for spell-dependent builds
+- **Meta-progression** — lifetime stats unlock bonuses for future runs
 - **256-color palettes** — 19 themed floor palettes with automatic fallback to 16-color
 - **Unicode tiles** — rich glyphs (█ walls, · floors, ≈ water, ▼▲ stairs) with ASCII fallback
 
@@ -242,8 +246,14 @@ Agent mode calls Claude Haiku (~$0.005-0.01 per game). A typical game uses 100-2
 ## Testing
 
 ```bash
-# Unit tests (474 tests)
+# Quick test suite (lint + unit tests + built-in tests, ~30s)
+./test-quick.sh
+
+# Unit tests only (474 tests)
 python3 -m pytest tests/
+
+# Lint only (ruff + mypy)
+./lint.sh
 
 # Built-in tests (dungeon connectivity, enemy spawning, item generation)
 python3 src/depths_of_dread/game.py --test
@@ -259,7 +269,11 @@ python3 src/depths_of_dread/game.py --bot --games 10 --class warrior
 
 # Agent batch (requires Claude CLI)
 python3 src/depths_of_dread/game.py --agent --games 6
+```
 
+### Play Modes
+
+```bash
 # Difficulty modes
 python3 src/depths_of_dread/game.py --difficulty easy    # Relaxed
 python3 src/depths_of_dread/game.py --difficulty hard    # Punishing
@@ -306,9 +320,10 @@ depths-of-dread/
     test_persistence.py  # Save/load, recordings, serialization
     test_quality.py  # Performance, security, balance, stress tests
     test_ui.py       # HUD, menus, inventory display
-  docs/              # Design docs, audit reports, research
+  docs/              # Design docs, audit reports, feature inventory
   pyproject.toml     # Package config, ruff + mypy settings
-  lint.sh            # One-command ruff + mypy validation
+  test-quick.sh      # Full test suite: lint + pytest + built-in tests (~30s)
+  lint.sh            # ruff + mypy validation
   LICENSE            # MIT
 ```
 

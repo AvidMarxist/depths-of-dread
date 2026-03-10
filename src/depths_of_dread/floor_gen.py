@@ -508,10 +508,16 @@ def _place_traps(gs: GameState, floor_num: int) -> None:
 def _place_vignettes(gs: GameState, floor_num: int) -> None:
     if not gs.rooms or len(gs.rooms) < 3:
         return
-    count = random.randint(1, 2)
+    # More vignettes on deeper floors (1-2 early, 2-3 deep)
+    count = random.randint(1, 2) if floor_num < 10 else random.randint(2, 3)
     used_rooms: set[tuple[int, int, int, int]] = set()
     start_room = gs.rooms[0]
     shop_rooms = {r for r, _ in gs.shops} if gs.shops else set()
+    # Filter vignettes appropriate for this floor depth
+    eligible = [v for v in VIGNETTE_TEMPLATES
+                if v.get("min_floor", 1) <= floor_num <= v.get("max_floor", 20)]
+    if not eligible:
+        eligible = VIGNETTE_TEMPLATES  # fallback
     for _ in range(count):
         candidates = [r for r in gs.rooms[1:]
                       if r not in used_rooms and r != start_room and r not in shop_rooms]
@@ -523,7 +529,7 @@ def _place_vignettes(gs: GameState, floor_num: int) -> None:
         vx = rx + rw // 2
         vy = ry + rh // 2
         if 0 < vx < MAP_W - 1 and 0 < vy < MAP_H - 1 and gs.tiles[vy][vx] == T_FLOOR:
-            template = random.choice(VIGNETTE_TEMPLATES)
+            template = random.choice(eligible)
             vignette = {
                 "x": vx, "y": vy,
                 "name": template["name"],
