@@ -11,7 +11,7 @@
 
 **A terminal roguelike dungeon crawler with Claude-powered AI agents.**
 
-Descend 15 floors of procedurally generated dungeons. Fight 19 enemy types and 3 bosses. Choose your class, solve puzzles, brew alchemy, and survive — or watch an AI do it for you.
+Descend 20 floors of procedurally generated dungeons. Fight 30+ enemy types and 5 bosses. Choose your class, solve puzzles, brew alchemy, and survive — or watch an AI do it for you.
 
 Built entirely in Python with zero external dependencies. Runs in any terminal.
 
@@ -270,26 +270,40 @@ python3 src/depths_of_dread/game.py --dark      # Reduced FOV
 ```
 depths-of-dread/
   src/depths_of_dread/
-    game.py          # Game loop, GameState, command dispatch (~990 lines)
+    game.py          # Game loop, GameState, command dispatch (~1,000 lines)
     constants.py     # All balance tuning, enemy/item/spell definitions (~900 lines)
-    bot.py           # BotPlayer decision tree + AgentPlayer Claude integration (~2,400 lines)
-    items.py         # Item usage, spells, player actions (~1,660 lines)
+    bot.py           # BotPlayer decision-tree AI (~900 lines)
+    agent.py         # AgentPlayer Claude-powered hybrid AI (~1,300 lines)
+    agent_ui.py      # Agent mode UI: split panel, pilot mode, FeatureTracker (~360 lines)
+    items.py         # Item usage, spells, player actions (~1,690 lines)
     ui.py            # Rendering, inventory, character sheet, menus (~1,580 lines)
     combat.py        # Combat resolution, enemy AI, status effects (~1,070 lines)
-    persistence.py   # Save/load, session recording, replay (~760 lines)
+    persistence.py   # Save/load, session recording, replay (~770 lines)
     floor_gen.py     # Floor generation, enemy/item/feature population (~680 lines)
     entities.py      # Player, Enemy, Item, ShopItem classes (~450 lines)
     mapgen.py        # BSP dungeon generation, FOV, A* pathfinding (~430 lines)
+    exceptions.py    # Custom exception hierarchy (~30 lines)
     __init__.py      # Version info
     __main__.py      # python -m entry point
   tests/
-    test_game.py     # 474 tests across all ISO 25010 quality dimensions
+    conftest.py      # Shared fixtures
+    test_bot.py      # Bot/agent AI tests
+    test_branches.py # Dungeon branches, puzzles, NPCs
+    test_combat.py   # Combat, traps, stealth, status effects
+    test_entities.py # Player, items, equipment
+    test_game_integration.py  # Game loop, keybindings, auto-fight/explore
+    test_items.py    # Spells, potions, scrolls, abilities, shops
+    test_mapgen.py   # Dungeon generation, pathfinding
+    test_persistence.py  # Save/load, recordings, serialization
+    test_quality.py  # Performance, security, balance, stress tests
+    test_ui.py       # HUD, menus, inventory display
   docs/              # Design docs, audit reports, research
-  pyproject.toml     # Package config
+  pyproject.toml     # Package config, ruff + mypy settings
+  lint.sh            # One-command ruff + mypy validation
   LICENSE            # MIT
 ```
 
-~10,900 lines of source across 10 modules. Zero external dependencies — just Python's standard library and a terminal.
+~11,600 lines of source across 13 modules. 474 tests across 10 test files. Zero external dependencies — just Python's standard library and a terminal.
 
 ---
 

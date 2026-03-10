@@ -1,29 +1,31 @@
 # Depths of Dread — Code Quality Audit
 
-**Date:** 2026-03-08
-**Codebase:** 10,846 source lines | 6,280 test lines | 10 source classes | 223 functions | 474 tests
+**Date:** 2026-03-08 (initial) | **Updated:** 2026-03-10
+**Codebase:** 11,582 source lines | 6,328 test lines | 13 source modules | 474 tests across 10 test files
 
 ---
 
 ## Executive Summary
 
-Depths of Dread is a well-structured Python roguelike with strong fundamentals: clean layered architecture, zero circular dependencies, comprehensive test coverage across all ISO 25010 dimensions, and a solid data-driven design. However, it has outgrown some of its early patterns. The main risks are **oversized functions** (game_loop at 450 lines), **zero type hints**, **wildcard imports**, and a **God class** (GameState at 750+ lines). These are the kinds of issues that make the codebase progressively harder to modify safely as it grows.
+Depths of Dread is a well-structured Python roguelike with strong fundamentals: clean layered architecture, zero circular dependencies, comprehensive test coverage across all ISO 25010 dimensions, and a solid data-driven design.
+
+**Update (Mar 10):** Two refactoring passes addressed all Tier 1 and Tier 2 issues from the original audit. The codebase now has full type hint coverage, dispatch patterns replacing all oversized if/elif chains, a custom exception hierarchy, extracted modules (bot → bot/agent/agent_ui, GameState → floor_gen), per-module test files, 93 magic numbers extracted into BALANCE dict, and ruff + mypy running clean. The code quality score has improved significantly.
 
 ### Scorecard
 
-| Category | Score | Verdict |
-|----------|:-----:|---------|
-| Architecture & Structure | 7/10 | Clean layers, but God class and monolith functions |
-| Code Quality | 5/10 | Good naming, but magic numbers (871 outside constants) and oversized functions |
-| Design Patterns | 7/10 | Good implicit patterns; missing Command and Event systems |
-| Error Handling | 4/10 | No bare excepts, but silent failures and no custom exceptions |
-| Testing | 8/10 | 474 tests, all ISO 25010 dims — strongest area |
-| Performance | 7/10 | `__slots__` on Item, appropriate algorithms, but no profiling infrastructure |
-| Documentation | 3/10 | ~15-20% docstring coverage, 0% type hints |
-| Security | 7/10 | Save checksum validation, JSON (not pickle), no eval() |
-| Maintainability | 5/10 | Good test safety net, but long functions and tight coupling via `*` imports |
-| Python Modernism | 4/10 | Missing type hints, dataclasses, match/case, pathlib |
-| **Overall** | **5.7/10** | **Solid foundation, needs modernization pass** |
+| Category | Score (Mar 8) | Score (Mar 10) | What Changed |
+|----------|:-----:|:-----:|---------|
+| Architecture & Structure | 7/10 | **9/10** | GameState split, bot.py split into 3 files, 13 clean modules |
+| Code Quality | 5/10 | **8/10** | Dispatch dicts, 93 magic numbers extracted, ruff enforced |
+| Design Patterns | 7/10 | **8/10** | Command dispatch, spell dispatch, layered bot decisions |
+| Error Handling | 4/10 | **6/10** | Custom exception hierarchy, specific except clauses |
+| Testing | 8/10 | **9/10** | Split into 10 per-module files + shared conftest.py |
+| Performance | 7/10 | 7/10 | No change |
+| Documentation | 3/10 | **6/10** | 100% type hints, updated README, audit docs |
+| Security | 7/10 | 7/10 | No change |
+| Maintainability | 5/10 | **8/10** | Explicit imports, dispatch patterns, modular tests, lint baseline |
+| Python Modernism | 4/10 | **7/10** | Full type hints, ruff + mypy clean, modern import style |
+| **Overall** | **5.7/10** | **7.5/10** | **Two refactoring passes, all Tier 1+2 items complete** |
 
 ---
 
@@ -311,35 +313,35 @@ The wildcard imports in `game.py` and `bot.py` mean these files are coupled to *
 
 ## Priority Action Plan
 
-### Tier 1 — High Impact, Do First
+### Tier 1 — High Impact ✅ COMPLETE (Mar 9-10)
 
-| # | Action | Effort | Impact | Risk |
-|---|--------|--------|--------|------|
-| 1 | **Add type hints** to entities.py, combat.py, mapgen.py | Medium | Unlocks static analysis, IDE support, safer refactoring | Low |
-| 2 | **Replace wildcard imports** with explicit imports | Low | Eliminates namespace pollution, clarifies dependencies | Low |
-| 3 | **Command dispatch for game_loop** — dict of key→handler | Medium | Cuts 450-line function to ~50, makes keybindings configurable | Low |
-| 4 | **Split GameState** into GameState + FloorGenerator | Medium | Eliminates God class, clarifies responsibilities | Medium |
+| # | Action | Status |
+|---|--------|--------|
+| 1 | **Add type hints** to all 10 source files | ✅ Done — 100% function signature coverage |
+| 2 | **Replace wildcard imports** with explicit imports in game.py | ✅ Done — constants.py excepted as shared data layer |
+| 3 | **Command dispatch for game_loop** — `COMMAND_HANDLERS` dict | ✅ Done — 210-line if/elif → 6-line dispatch |
+| 4 | **Split GameState** into GameState + floor_gen.py | ✅ Done — 676 lines extracted |
 
-### Tier 2 — Medium Impact, Do Next
+### Tier 2 — Medium Impact ✅ COMPLETE (Mar 10)
 
-| # | Action | Effort | Impact | Risk |
-|---|--------|--------|--------|------|
-| 5 | **Spell dispatch dict/match** for _cast_spell | Low-Med | Cuts 243-line function into 30 small handlers | Low |
-| 6 | **Split test_game.py** into per-module test files | Low | Readability, parallel test execution | Low |
-| 7 | **Extract BotPlayer priority methods** | Medium | Makes AI decision tree readable and modifiable | Medium |
-| 8 | **Add custom exception hierarchy** | Low | Better error diagnostics, structured error handling | Low |
-| 9 | **Split bot.py** into bot/agent/agent_ui | Low | Each file under 800 lines | Low |
+| # | Action | Status |
+|---|--------|--------|
+| 5 | **Spell dispatch dict** for `_cast_spell` | ✅ Done — `SPELL_HANDLERS` dict + 8 handlers |
+| 6 | **Split test_game.py** into per-module test files | ✅ Done — 10 test files + conftest.py |
+| 7 | **Extract BotPlayer priority methods** | ✅ Done — 4 layer methods + 4 combat sub-helpers |
+| 8 | **Add custom exception hierarchy** | ✅ Done — exceptions.py with 7 exception types |
+| 9 | **Split bot.py** into bot/agent/agent_ui | ✅ Done — 906 + 1,309 + 361 lines |
 
-### Tier 3 — Polish, Do When Touching These Areas
+### Tier 3 — Polish (partially complete)
 
-| # | Action | Effort | Impact | Risk |
-|---|--------|--------|--------|------|
-| 10 | Extract magic numbers to named constants | Low | Self-documenting code | Low |
-| 11 | Add Hypothesis property-based tests | Medium | Find edge cases in generation/combat | Low |
-| 12 | Convert entities to `@dataclass(slots=True)` | Medium | Cleaner, memory-efficient, type-annotated | Medium |
-| 13 | Add `ruff` config + format on save | Low | Consistent style, catch issues early | Low |
-| 14 | Add `mypy` to CI (after type hints reach 50%) | Low | Catch type errors before runtime | Low |
-| 15 | Add docstrings to all public functions | Medium | Contributor onboarding, API clarity | Low |
+| # | Action | Status |
+|---|--------|--------|
+| 10 | Extract magic numbers to named constants | ✅ Done — 93 literals → BALANCE dict |
+| 11 | Add Hypothesis property-based tests | ⬜ Open |
+| 12 | Convert entities to `@dataclass(slots=True)` | ⬜ Open |
+| 13 | Add `ruff` config | ✅ Done — clean baseline, lint.sh |
+| 14 | Add `mypy` to CI | ✅ Done — clean baseline, 0 errors |
+| 15 | Add docstrings to all public functions | ⬜ Open |
 
 ---
 
