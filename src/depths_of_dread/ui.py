@@ -16,7 +16,7 @@ from typing import TYPE_CHECKING, Any
 
 from .combat import player_attack, process_enemies
 from .constants import *
-from .constants import _floor_theme_name, _get_theme_pairs
+from .constants import _floor_theme_name, _get_theme_pairs, get_tile_char
 from .entities import Item, Player
 from .mapgen import _has_los, astar, compute_fov
 
@@ -112,7 +112,7 @@ def render_map(scr: Any, gs: GameState) -> None:
 
 def _draw_tile(scr: Any, sy: int, sx: int, tile: int, lit: bool, floor_num: int,
                active_branch: str | None = None) -> None:
-    ch = TILE_CHARS.get(tile, ' ')
+    ch = get_tile_char(tile)
 
     # 256-color themed rendering
     if HAS_256_COLORS:

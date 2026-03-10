@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import curses
+import locale as _locale
 import os
 from typing import Any
 
@@ -566,6 +567,40 @@ TILE_CHARS: dict[int, str] = {
     T_SECRET_WALL: '#',   # Looks like a normal wall
 }
 
+# Unicode tile characters — richer glyphs for terminals with UTF-8 support
+TILE_CHARS_UNICODE: dict[int, str] = {
+    T_WALL: '\u2588',          # █ Full block — solid wall
+    T_FLOOR: '\u00b7',         # · Middle dot — open floor
+    T_CORRIDOR: '\u00b7',      # · Middle dot — corridor floor
+    T_DOOR: '\u256c',          # ╬ Double cross — door frame
+    T_STAIRS_DOWN: '\u25bc',   # ▼ Down triangle — descending stairs
+    T_STAIRS_UP: '\u25b2',     # ▲ Up triangle — ascending stairs
+    T_WATER: '\u2248',         # ≈ Almost equal — water ripples
+    T_LAVA: '\u2248',          # ≈ Almost equal — lava flow
+    T_SHOP_FLOOR: '\u00b7',    # · Middle dot — shop floor
+    T_SHRINE: '\u2261',        # ≡ Triple bar — shrine altar
+    T_ALCHEMY_TABLE: '\u0394', # Δ Delta — alchemy station
+    T_WALL_TORCH: '\u2020',    # † Dagger — wall-mounted torch
+    T_PEDESTAL_UNLIT: '\u25cb', # ○ White circle — unlit pedestal
+    T_PEDESTAL_LIT: '\u25cf',  # ● Black circle — lit pedestal
+    T_SWITCH_OFF: '\u25a1',    # □ White square — switch off
+    T_SWITCH_ON: '\u25a0',     # ■ Black square — switch on
+    T_STAIRS_LOCKED: '\u2573', # ╳ Box X — locked stairs
+    T_TRAP_HIDDEN: '\u00b7',   # · Middle dot — looks like floor
+    T_TRAP_VISIBLE: '\u25b3',  # △ White up triangle — revealed trap
+    T_ENCHANT_ANVIL: '\u0394', # Δ Delta — enchanting anvil
+    T_FOUNTAIN: '\u03a9',      # Ω Omega — fountain basin
+    T_SECRET_WALL: '\u2588',   # █ Full block — looks like normal wall
+}
+
+
+def get_tile_char(tile: int) -> str:
+    """Return the display character for a tile, using unicode if available."""
+    if USE_UNICODE:
+        return TILE_CHARS_UNICODE.get(tile, TILE_CHARS.get(tile, ' '))
+    return TILE_CHARS.get(tile, ' ')
+
+
 WALKABLE: set[int] = {T_FLOOR, T_CORRIDOR, T_DOOR, T_STAIRS_DOWN, T_STAIRS_UP,
             T_WATER, T_SHOP_FLOOR, T_SHRINE, T_ALCHEMY_TABLE,
             T_PEDESTAL_UNLIT, T_PEDESTAL_LIT, T_SWITCH_OFF, T_SWITCH_ON,
@@ -712,6 +747,10 @@ _CHALLENGE_MODES: dict[str, bool] = {"ironman": False, "speedrun": False, "pacif
 
 HAS_COLORS: bool = True  # set at runtime by init_colors
 HAS_256_COLORS: bool = False  # set at runtime by init_colors
+
+# Unicode tile detection — auto-enabled when locale supports UTF-8
+USE_UNICODE: bool = ("UTF-8" in (_locale.getpreferredencoding() or "").upper()
+                     or "UTF-8" in os.environ.get("LANG", "").upper())
 
 # ---- 256-color themed palettes ----
 # Each theme defines 4 color pair indices: wall_lit, wall_dim, floor_lit, floor_dim
