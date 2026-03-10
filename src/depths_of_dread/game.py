@@ -14,6 +14,14 @@ Controls: WASD / Arrows / hjklyubn (vi keys)
 """
 from __future__ import annotations
 
+# Allow running directly: python3 src/depths_of_dread/game.py
+if __name__ == "__main__" and __package__ is None:
+    import sys as _sys, os as _os
+    _src = _os.path.dirname(_os.path.dirname(_os.path.abspath(__file__)))
+    if _src not in _sys.path:
+        _sys.path.insert(0, _src)
+    __package__ = "depths_of_dread"
+
 import curses
 import random
 import time
