@@ -1064,7 +1064,8 @@ def _parse_args() -> argparse.Namespace:
     return parser.parse_args()
 
 
-if __name__ == "__main__":
+def cli_main() -> None:
+    """CLI entry point — parses args and dispatches to the right mode."""
     args = _parse_args()
     if args.test:
         sys.exit(0 if run_tests() else 1)
@@ -1105,3 +1106,7 @@ if __name__ == "__main__":
             from . import constants as _c
             _c.USE_UNICODE = False
         main()
+
+
+if __name__ == "__main__":
+    cli_main()

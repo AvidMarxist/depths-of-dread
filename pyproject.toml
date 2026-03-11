@@ -31,7 +31,7 @@ classifiers = [
 keywords = ["roguelike", "dungeon", "crawler", "terminal", "curses", "game"]
 
 [project.scripts]
-depths-of-dread = "depths_of_dread.game:main"
+depths-of-dread = "depths_of_dread.game:cli_main"
 
 [project.urls]
 Homepage = "https://github.com/willrompf/depths-of-dread"
