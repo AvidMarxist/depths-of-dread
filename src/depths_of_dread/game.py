@@ -1030,9 +1030,11 @@ def run_tests() -> bool:
 
 
 def _parse_args() -> argparse.Namespace:
+    from . import __version__
     parser = argparse.ArgumentParser(
         description="Depths of Dread - A Terminal Roguelike",
         epilog="Controls: WASD/Arrows/hjkl to move. ? for in-game help. Q to save & quit.")
+    parser.add_argument("--version", action="version", version=f"Depths of Dread v{__version__}")
     parser.add_argument("--test", action="store_true", help="Run built-in tests")
     parser.add_argument("--bot", action="store_true", help="Watch AI bot play")
     parser.add_argument("--agent", action="store_true", help="Watch Claude-powered agent play")

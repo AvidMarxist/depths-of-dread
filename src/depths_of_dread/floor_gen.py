@@ -29,6 +29,7 @@ from .constants import (
     SCROLL_EFFECTS,
     T_ALCHEMY_TABLE,
     T_CORRIDOR,
+    T_DOOR,
     T_ENCHANT_ANVIL,
     T_FLOOR,
     T_FOUNTAIN,
@@ -39,6 +40,7 @@ from .constants import (
     T_SHRINE,
     T_STAIRS_DOWN,
     T_STAIRS_LOCKED,
+    T_STAIRS_UP,
     T_SWITCH_OFF,
     T_WALL,
     T_WALL_TORCH,
@@ -128,25 +130,37 @@ def _get_active_branch(gs: GameState, floor_num: int) -> str | None:
 
 
 def _apply_branch_terrain(gs: GameState, floor_num: int, branch_key: str) -> None:
-    """Modify terrain tiles for a branch (more water/lava)."""
+    """Modify terrain tiles for a branch (more water/lava).
+
+    Only places hazard tiles on room floor tiles (not corridors or doors)
+    to avoid severing paths between rooms. Skips player spawn and stairs.
+    """
     bdef = BRANCH_DEFS[branch_key]
+    # Only replace room floor tiles, never corridors/doors (which are chokepoints)
     floor_tiles = [(x, y) for y in range(MAP_H) for x in range(MAP_W)
                    if gs.tiles[y][x] == T_FLOOR]
     random.shuffle(floor_tiles)
     water_count = int(len(floor_tiles) * B["branch_terrain_base_fraction"] * bdef.get("water_boost", 1.0))
     lava_count = int(len(floor_tiles) * B["branch_terrain_base_fraction"] * bdef.get("lava_boost", 1.0))
+    protected = {(gs.player.x, gs.player.y), gs.stair_down}
     idx = 0
     for _ in range(water_count):
         if idx < len(floor_tiles):
             x, y = floor_tiles[idx]
-            if (x, y) != (gs.player.x, gs.player.y) and (x, y) != gs.stair_down:
+            if (x, y) not in protected:
                 gs.tiles[y][x] = T_WATER
             idx += 1
     for _ in range(lava_count):
         if idx < len(floor_tiles):
             x, y = floor_tiles[idx]
-            if (x, y) != (gs.player.x, gs.player.y) and (x, y) != gs.stair_down:
-                gs.tiles[y][x] = T_LAVA
+            if (x, y) not in protected:
+                # Don't place lava if it would block the only path through a narrow area
+                adj_walkable = sum(1 for dx, dy in [(-1,0),(1,0),(0,-1),(0,1)]
+                                   if 0 <= x+dx < MAP_W and 0 <= y+dy < MAP_H
+                                   and gs.tiles[y+dy][x+dx] in (T_FLOOR, T_CORRIDOR, T_DOOR,
+                                                                  T_STAIRS_DOWN, T_STAIRS_UP, T_WATER))
+                if adj_walkable >= 2:  # Only place lava if tile has 2+ walkable neighbors
+                    gs.tiles[y][x] = T_LAVA
             idx += 1
 
 
@@ -338,7 +352,7 @@ def _place_shrine(gs: GameState, floor_num: int) -> None:
     room = gs.rooms[random.randint(1, len(gs.rooms) - 1)]
     cx = room[0] + room[2] // 2
     cy = room[1] + room[3] // 2
-    if 0 < cx < MAP_W - 1 and 0 < cy < MAP_H - 1:
+    if 0 < cx < MAP_W - 1 and 0 < cy < MAP_H - 1 and gs.tiles[cy][cx] == T_FLOOR:
         gs.tiles[cy][cx] = T_SHRINE
 
 
