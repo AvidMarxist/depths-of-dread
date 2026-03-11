@@ -568,7 +568,8 @@ def show_help(scr: Any) -> None:
             ("o  Auto-explore    x  Examine/look", C_WHITE),
             (">  Descend stairs  <  Ascend stairs", C_WHITE),
             (".  Wait/rest       R  Rest until healed", C_WHITE),
-            ("T  Toggle torch    p  Pray at shrine", C_WHITE),
+            ("T  Toggle torch    G  Toggle graphics", C_WHITE),
+            ("p  Pray at shrine", C_WHITE),
             ("/  Search for traps  D  Disarm trap", C_WHITE),
         ],
         [

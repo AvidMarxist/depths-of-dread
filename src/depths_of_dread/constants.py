@@ -755,8 +755,32 @@ HAS_COLORS: bool = True  # set at runtime by init_colors
 HAS_256_COLORS: bool = False  # set at runtime by init_colors
 
 # Unicode tile detection — auto-enabled when locale supports UTF-8
-USE_UNICODE: bool = ("UTF-8" in (_locale.getpreferredencoding() or "").upper()
-                     or "UTF-8" in os.environ.get("LANG", "").upper())
+_CAN_UNICODE: bool = ("UTF-8" in (_locale.getpreferredencoding() or "").upper()
+                      or "UTF-8" in os.environ.get("LANG", "").upper())
+USE_UNICODE: bool = _CAN_UNICODE
+
+# Graphics mode names
+GRAPHICS_OLD_SCHOOL = "Old School"
+GRAPHICS_NEW = "Slightly Less Old School"
+
+
+def toggle_graphics() -> str:
+    """Toggle between Old School (ASCII) and Slightly Less Old School (Unicode).
+    Returns the name of the new mode."""
+    global USE_UNICODE
+    if USE_UNICODE:
+        USE_UNICODE = False
+        return GRAPHICS_OLD_SCHOOL
+    elif _CAN_UNICODE:
+        USE_UNICODE = True
+        return GRAPHICS_NEW
+    else:
+        return GRAPHICS_OLD_SCHOOL  # terminal doesn't support unicode
+
+
+def graphics_mode_name() -> str:
+    """Return the name of the current graphics mode."""
+    return GRAPHICS_NEW if USE_UNICODE else GRAPHICS_OLD_SCHOOL
 
 # ---- 256-color themed palettes ----
 # Each theme defines 4 color pair indices: wall_lit, wall_dim, floor_lit, floor_dim

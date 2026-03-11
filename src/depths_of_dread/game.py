@@ -84,7 +84,7 @@ from .combat import (
 
 # --- Constants (data layer — wildcard import is intentional) ---
 from .constants import *  # noqa: F403 — constants are the shared data layer
-from .constants import _CHALLENGE_MODES, _DIR_MAP
+from .constants import _CHALLENGE_MODES, _DIR_MAP, toggle_graphics
 
 # --- Entities ---
 from .entities import (
@@ -579,6 +579,12 @@ def _cmd_enchant(gs: GameState, scr: Any) -> bool | None:
     return None
 
 
+def _cmd_toggle_graphics(gs: GameState, scr: Any) -> None:
+    mode = toggle_graphics()
+    gs.msg(f"Graphics: {mode}", C_YELLOW)
+    return None
+
+
 def _cmd_toggle_torch(gs: GameState, scr: Any) -> None:
     p = gs.player
     if p.torch_fuel <= 0:
@@ -693,6 +699,7 @@ COMMAND_HANDLERS = {
     ord('S'): lambda gs, scr: (show_lifetime_stats(scr), None)[1],
     ord('e'): _cmd_interact,
     ord('E'): _cmd_enchant,
+    ord('G'): _cmd_toggle_graphics,
     ord('T'): _cmd_toggle_torch,
     ord('Q'): _cmd_quit,
     ord('q'): lambda gs, scr: (gs.msg("Press Q (shift) to quit.", C_DARK), None)[1],
@@ -1053,6 +1060,7 @@ def _parse_args() -> argparse.Namespace:
     parser.add_argument("--speedrun", action="store_true", help="Speedrun: turn timer, no resting")
     parser.add_argument("--pacifist", action="store_true", help="Pacifist: no direct kills allowed")
     parser.add_argument("--dark", action="store_true", help="Dark mode: reduced FOV, no map reveal")
+    parser.add_argument("--ascii", action="store_true", help="Old School mode: classic ASCII graphics")
     return parser.parse_args()
 
 
@@ -1093,4 +1101,7 @@ if __name__ == "__main__":
         _CHALLENGE_MODES["difficulty"] = args.difficulty
         _CHALLENGE_MODES["player_class"] = args.player_class
         _CHALLENGE_MODES["seed"] = args.seed
+        if args.ascii:
+            from . import constants as _c
+            _c.USE_UNICODE = False
         main()
