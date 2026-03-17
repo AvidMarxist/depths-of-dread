@@ -1,7 +1,7 @@
 # Depths of Dread — Feature Inventory
 
-**Total Source Lines:** ~11,868 (13 modules, all fully typed)
-**Last Updated:** 2026-03-10
+**Total Source Lines:** ~12,640 (13 modules, all fully typed)
+**Last Updated:** 2026-03-17
 
 ---
 

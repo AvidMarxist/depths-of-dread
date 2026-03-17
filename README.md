@@ -153,7 +153,7 @@ In Agent mode, press **Shift+P** to enter **Pilot Mode** — take manual control
 # Just download and run — no install needed
 git clone https://github.com/AvidMarxist/depths-of-dread.git
 cd depths-of-dread
-python3 src/depths_of_dread/game.py
+python3 dungeon.py
 ```
 
 **Option B — Install as a package:**
@@ -203,7 +203,7 @@ git clone https://github.com/AvidMarxist/depths-of-dread.git
 **Play (works offline after setup):**
 ```bash
 cd depths-of-dread
-python3 src/depths_of_dread/game.py
+python3 dungeon.py
 ```
 
 **Tips for iPad:**
@@ -295,7 +295,7 @@ depths-of-dread/
   src/depths_of_dread/
     game.py          # Game loop, GameState, command dispatch (~1,090 lines)
     constants.py     # All balance tuning, enemy/item/spell/theme definitions (~1,180 lines)
-    bot.py           # BotPlayer decision-tree AI + batch mode (~1,050 lines)
+    bot.py           # BotPlayer decision-tree AI + batch mode (~1,550 lines)
     agent.py         # AgentPlayer Claude-powered hybrid AI (~1,350 lines)
     agent_ui.py      # Agent mode UI: split panel, pilot mode, FeatureTracker (~390 lines)
     items.py         # Item usage, spells, player actions (~1,700 lines)
@@ -303,7 +303,7 @@ depths-of-dread/
     combat.py        # Combat resolution, enemy AI, status effects (~1,070 lines)
     persistence.py   # Save/load, session recording, replay (~770 lines)
     floor_gen.py     # Floor generation, enemy/item/feature population (~710 lines)
-    entities.py      # Player, Enemy, Item, ShopItem classes (~450 lines)
+    entities.py      # Player, Enemy, Item, ShopItem classes (~490 lines)
     mapgen.py        # BSP dungeon generation, FOV, A* pathfinding (~430 lines)
     exceptions.py    # Custom exception hierarchy (~30 lines)
     __init__.py      # Version info
@@ -327,7 +327,7 @@ depths-of-dread/
   LICENSE            # MIT
 ```
 
-~11,900 lines of source across 13 modules. 474 tests across 10 test files. Zero external dependencies — just Python's standard library and a terminal.
+~12,400 lines of source across 13 modules. 474 tests across 10 test files. Zero external dependencies — just Python's standard library and a terminal.
 
 ---
 

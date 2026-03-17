@@ -98,8 +98,12 @@ Tests in `/Users/will/Scripts/tests/test_dungeon.py`:
 
 *(Updated after batch runs — see session-log.md for latest numbers)*
 
-### Bot Baseline (decision tree, no Claude)
-- Avg floor: 8.8, Max floor: 15, Avg kills: ~45
+### Bot Baseline (decision tree, no Claude — March 2026)
+- Avg floor: 13.1 (warrior), 10.2 (all classes), Max floor: 20
+- F20 reach rate: ~2% (warrior), ~1.5% (all classes)
+- 0% timeout rate across 3500+ games
+- 4-layer priority AI: Survival → Combat → Exploration → Resources
+- Phase-aware boss strategy, fear handling, smart levelup choices
 - Speed: instant (no external calls)
 
 ### Agent Results (Feb 28, 2026 — first test game, pre-optimization)

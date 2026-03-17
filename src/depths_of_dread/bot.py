@@ -94,11 +94,16 @@ class BotPlayer:
         self._floor_tiles_visited: set[tuple[int, int]] = set()  # Unique tiles visited on current floor
         self._floor_start_turn: int = 0         # Turn when we entered this floor
         self._current_floor: int = 0            # Track floor for reset
+        self._floor_start_pos: tuple[int, int] = (0, 0)  # Where we entered this floor
 
     def decide(self, gs: GameState) -> tuple[str, dict[str, Any]]:
         """Returns (action, params) tuple. Deterministic given same state."""
         self.decisions += 1
         p = gs.player
+
+        # Reset fear counter when fear expires
+        if "Fear" not in p.status_effects:
+            self._fear_turns = 0
 
         # Status effect overrides (can't use normal decision tree)
         if "Paralysis" in p.status_effects:
@@ -106,25 +111,95 @@ class BotPlayer:
             self.target_desc = "can't move"
             return ("rest", {})
         if "Fear" in p.status_effects:
-            flee_dir = self._flee_direction(gs)
-            if flee_dir:
+            # Fear blocks ALL moves toward visible enemies (including melee attacks).
+            # Strategy: use ranged/spells to kill fear source, flee away, or rest.
+            self._fear_turns = getattr(self, '_fear_turns', 0) + 1
+
+            # Emergency escape: if stuck in Fear 30+ turns, Teleport out
+            if self._fear_turns >= 30:
+                if ("Teleport" in p.known_spells
+                        and p.mana >= SPELLS["Teleport"]["cost"]):
+                    self._fear_turns = 0
+                    self.strategy = "FEARED"
+                    self.target_desc = "teleport escape from fear loop"
+                    return ("cast_spell", {"spell": "Teleport"})
+                # Try Teleport scroll
+                for item in p.inventory:
+                    if (item.item_type == "scroll"
+                            and (item.identified or item.data.get("effect") in gs.id_scrolls)
+                            and item.data.get("effect") == "Teleport"):
+                        self._fear_turns = 0
+                        self.strategy = "FEARED"
+                        self.target_desc = "teleport scroll escape"
+                        return ("use_scroll", {"item": item})
+
+            # Try ranged/spell attacks (don't require approaching)
+            nearest = self._nearest_visible_enemy(gs)
+            if nearest:
+                result = self._try_ranged_attack(gs, nearest)
+                if result:
+                    self.strategy = "FEARED"
+                    self.target_desc = f"ranged -> {nearest.name}"
+                    return result
+                result = self._try_spell_attack(gs, nearest)
+                if result:
+                    self.strategy = "FEARED"
+                    self.target_desc = f"spell -> {nearest.name}"
+                    return result
+                result = self._use_combat_scrolls(gs, nearest)
+                if result:
+                    return result
+
+            # Try to flee away from ALL visible enemies
+            visible_enemies = [e for e in gs.enemies
+                               if e.is_alive() and (e.x, e.y) in gs.visible]
+            best_dir = None
+            best_dist_gain = -999
+            for ddx, ddy in [(-1,0),(1,0),(0,-1),(0,1),(1,1),(1,-1),(-1,1),(-1,-1)]:
+                nx, ny = p.x + ddx, p.y + ddy
+                if not (0 <= nx < MAP_W and 0 <= ny < MAP_H):
+                    continue
+                if gs.tiles[ny][nx] not in WALKABLE:
+                    continue
+                if any(e.x == nx and e.y == ny and e.is_alive() for e in gs.enemies):
+                    continue
+                blocked = False
+                total_gain = 0
+                for e in visible_enemies:
+                    old_d = abs(e.x - p.x) + abs(e.y - p.y)
+                    new_d = abs(e.x - nx) + abs(e.y - ny)
+                    if new_d < old_d:
+                        blocked = True
+                        break
+                    total_gain += (new_d - old_d)
+                if not blocked and total_gain > best_dist_gain:
+                    best_dist_gain = total_gain
+                    best_dir = (ddx, ddy)
+            if best_dir:
                 self.strategy = "FEARED"
                 self.target_desc = "fleeing in terror"
-                return ("move", {"dx": flee_dir[0], "dy": flee_dir[1]})
+                return ("move", {"dx": best_dir[0], "dy": best_dir[1]})
+            # No safe direction — rest to let Fear expire (rest always spends a turn)
             self.strategy = "FEARED"
             self.target_desc = "cowering"
             return ("rest", {})
         if "Confusion" in p.status_effects:
+            # player_move will randomize direction — just pick a walkable neighbor
             self.strategy = "CONFUSED"
             self.target_desc = "stumbling"
-            dx, dy = random.choice([(-1,0),(1,0),(0,-1),(0,1)])
-            return ("move", {"dx": dx, "dy": dy})
+            # Try to move in any walkable direction (player_move will scramble it)
+            for ddx, ddy in [(-1,0),(1,0),(0,-1),(0,1)]:
+                nx, ny = p.x + ddx, p.y + ddy
+                if 0 <= nx < MAP_W and 0 <= ny < MAP_H and gs.tiles[ny][nx] in WALKABLE:
+                    return ("move", {"dx": ddx, "dy": ddy})
+            return ("rest", {})
 
         # Floor change detection — reset per-floor tracking
         if p.floor != self._current_floor:
             self._current_floor = p.floor
             self._floor_tiles_visited = set()
             self._floor_start_turn = gs.turn_count
+            self._floor_start_pos = (p.x, p.y)
             self._explore_target = None
             self._explore_stuck = 0
 
@@ -143,14 +218,118 @@ class BotPlayer:
             else:
                 self._explore_stuck = 0
 
+        # Floor 20: boss rush mode — find and kill the Abyssal Horror
+        if p.floor == MAX_FLOORS:
+            boss = None
+            for e in gs.enemies:
+                if e.is_alive() and e.boss and e.etype == "abyssal_horror":
+                    boss = e
+                    break
+            if boss:
+                boss_dist = abs(boss.x - p.x) + abs(boss.y - p.y)
+                hp_pct_boss = p.hp / p.max_hp if p.max_hp > 0 else 0
+                boss_hp_pct = boss.hp / boss.max_hp if boss.max_hp > 0 else 1.0
+
+                # Emergency heal during boss fight — use any healing at < 40%
+                if hp_pct_boss < 0.4:
+                    for item in p.inventory:
+                        if item.item_type == "potion" and item.identified and item.data.get("effect") == "Healing":
+                            self.strategy = "BOSS_HEAL"
+                            self.target_desc = "healing vs boss"
+                            return ("use_item", {"item": item, "type": "potion"})
+                    if p.mana >= SPELLS["Heal"]["cost"]:
+                        self.strategy = "BOSS_HEAL"
+                        self.target_desc = "heal spell vs boss"
+                        return ("cast_spell", {"spell": "Heal"})
+
+                # Pre-buff before engaging
+                if boss_dist <= 10:
+                    result = self._pre_buff_for_boss(gs, boss)
+                    if result:
+                        return result
+
+                # Phase-aware ability usage:
+                # Save Battle Cry + combat scrolls for phase 3 (boss HP < 25%)
+                # Use them freely in phase 1-2 only if we have extras
+                if (boss.x, boss.y) in gs.visible:
+                    # Battle Cry: freeze boss + all minions — critical for phase 3 burst
+                    if boss_hp_pct < 0.30 and boss.frozen_turns <= 0:
+                        # Phase 3 imminent/active — freeze NOW for burst damage window
+                        if (p.player_class == "warrior" and p.ability_cooldown <= 0
+                                and p.mana >= CHARACTER_CLASSES["warrior"]["ability_cost"]):
+                            self.strategy = "BOSS_BURST"
+                            self.target_desc = "BATTLE CRY vs phase 3 boss!"
+                            return ("use_class_ability", {})
+                    elif boss.frozen_turns <= 0 and p.ability_cooldown <= 0:
+                        # Phase 1-2: use Battle Cry to get free damage turns
+                        if (p.player_class == "warrior"
+                                and p.mana >= CHARACTER_CLASSES["warrior"]["ability_cost"]):
+                            self.strategy = "BOSS_FREEZE"
+                            self.target_desc = "BATTLE CRY vs boss!"
+                            return ("use_class_ability", {})
+
+                    # Freeze spell on boss when not frozen
+                    if ("Freeze" in p.known_spells
+                            and p.mana >= SPELLS["Freeze"]["cost"]
+                            and boss.frozen_turns <= 0):
+                        self.strategy = "BOSS_FREEZE"
+                        self.target_desc = "freeze boss!"
+                        return ("cast_spell", {"spell": "Freeze", "target": boss})
+
+                    # Use combat scrolls
+                    result = self._use_combat_scrolls(gs, boss)
+                    if result:
+                        return result
+                    # Use ALL remaining attack spells
+                    result = self._try_spell_attack(gs, boss)
+                    if result:
+                        return result
+                    result = self._try_ranged_attack(gs, boss)
+                    if result:
+                        return result
+                else:
+                    # Boss not visible — path toward it
+                    step = astar(gs.tiles, p.x, p.y, boss.x, boss.y, max_steps=200)
+                    if step:
+                        self.strategy = "BOSS_SEEK"
+                        self.target_desc = "hunting the Abyssal Horror"
+                        return ("move", {"dx": step[0], "dy": step[1]})
+
         # Priority layers — first non-None result wins
-        for layer in (self._decide_survival, self._decide_combat,
-                      self._decide_exploration, self._decide_resources):
+        # On F20: combat first, only heal when critical (boss regen punishes healing turns)
+        if p.floor == MAX_FLOORS:
+            layers = (self._decide_combat, self._decide_survival,
+                      self._decide_exploration, self._decide_resources)
+        else:
+            layers = (self._decide_survival, self._decide_combat,
+                      self._decide_exploration, self._decide_resources)
+        for layer in layers:
             result = layer(gs)
             if result is not None:
                 return result
 
-        # Fallback: wait
+        # Fallback: instead of waiting forever, move toward stairs or random
+        p = gs.player
+        sx, sy = gs.stair_down
+        # Try to path toward stairs
+        step = astar(gs.tiles, p.x, p.y, sx, sy, max_steps=200)
+        if step:
+            self.strategy = "FALLBACK"
+            self.target_desc = "forcing toward stairs"
+            return ("move", {"dx": step[0], "dy": step[1]})
+        # Try random walkable neighbor
+        neighbors = []
+        for ddx, ddy in [(-1,0),(1,0),(0,-1),(0,1),(1,1),(1,-1),(-1,1),(-1,-1)]:
+            nx, ny = p.x + ddx, p.y + ddy
+            if 0 <= nx < MAP_W and 0 <= ny < MAP_H and gs.tiles[ny][nx] in WALKABLE:
+                if not any(e.x == nx and e.y == ny and e.is_alive() for e in gs.enemies):
+                    neighbors.append((ddx, ddy))
+        if neighbors:
+            dx, dy = random.choice(neighbors)
+            self.strategy = "FALLBACK"
+            self.target_desc = "random walk"
+            return ("move", {"dx": dx, "dy": dy})
+        # Truly stuck — rest
         self.strategy = "WAIT"
         self.target_desc = "waiting"
         return ("rest", {})
@@ -165,8 +344,8 @@ class BotPlayer:
         hp_pct = p.hp / p.max_hp if p.max_hp > 0 else 0
         hunger_pct = p.hunger
 
-        # Urgent heal if poisoned and HP getting low
-        if "Poison" in p.status_effects and hp_pct < 0.5:
+        # Urgent heal if poisoned — heal at 70% HP since poison ticks damage
+        if "Poison" in p.status_effects and hp_pct < 0.7:
             for item in p.inventory:
                 if item.item_type == "potion" and item.identified and item.data.get("effect") == "Healing":
                     self.strategy = "HEAL"
@@ -177,8 +356,9 @@ class BotPlayer:
                 self.target_desc = "poisoned! heal spell"
                 return ("cast_spell", {"spell": "Heal"})
 
-        # Heal if HP < 40%
-        if hp_pct < 0.4:
+        # Heal threshold: 50% normally, 25% on F20 (every heal turn = boss regen)
+        heal_threshold = 0.25 if p.floor == MAX_FLOORS else 0.5
+        if hp_pct < heal_threshold:
             for item in p.inventory:
                 if item.item_type == "potion":
                     if item.identified and item.data.get("effect") == "Healing":
@@ -199,9 +379,11 @@ class BotPlayer:
                         self.strategy = "HEAL"
                         self.target_desc = "food"
                         return ("use_item", {"item": item, "type": "food"})
-            if hunger_pct > 30 and not self._enemies_visible(gs):
+            # Only rest if critically low (< 30%) — resting at 1 HP/turn is too slow
+            # to do every time we're below 50%. Keep exploring while partially damaged.
+            if hp_pct < 0.3 and hunger_pct > 30 and not self._enemies_visible(gs):
                 self.strategy = "REST"
-                self.target_desc = "resting"
+                self.target_desc = "resting (critical)"
                 return ("rest", {})
 
         # Eat food if hunger < 30%
@@ -217,8 +399,23 @@ class BotPlayer:
         if equip_action:
             return equip_action
 
-        # Flee if HP < 20% and enemies visible
-        if hp_pct < 0.2 and self._enemies_visible(gs):
+        # Mage: activate Mana Shield when entering combat
+        if (p.player_class == "mage" and "Mana Shield" in p.known_spells
+                and "Mana Shield" not in p.status_effects
+                and p.mana >= SPELLS["Mana Shield"]["cost"]
+                and self._enemies_visible(gs)):
+            self.strategy = "BUFF"
+            self.target_desc = "mana shield"
+            return ("cast_spell", {"spell": "Mana Shield"})
+
+        # Flee if HP < 30% and enemies visible (but never flee on floor 20 — must fight boss)
+        if hp_pct < 0.3 and self._enemies_visible(gs) and p.floor < MAX_FLOORS:
+            # Mage: use Teleport to escape instead of running
+            if ("Teleport" in p.known_spells
+                    and p.mana >= SPELLS["Teleport"]["cost"]):
+                self.strategy = "FLEE"
+                self.target_desc = "teleport escape!"
+                return ("cast_spell", {"spell": "Teleport"})
             flee_dir = self._flee_direction(gs)
             if flee_dir:
                 self.strategy = "FLEE"
@@ -241,6 +438,16 @@ class BotPlayer:
         hp_pct = p.hp / p.max_hp if p.max_hp > 0 else 0
         dist = abs(nearest_enemy.x - p.x) + abs(nearest_enemy.y - p.y)
 
+        # Skip optional fights when time-pressured (100+ turns on floor, enemy > 3 tiles away)
+        floor_turns = gs.turn_count - self._floor_start_turn
+        if floor_turns > 100 and dist > 3 and not nearest_enemy.boss:
+            return None  # Let exploration layer handle movement
+
+        # Pre-buff for bosses (Strength potion, Shield Wall, Mana Shield)
+        result = self._pre_buff_for_boss(gs, nearest_enemy)
+        if result:
+            return result
+
         # Class abilities
         result = self._try_warrior_abilities(gs, nearest_enemy, hp_pct)
         if result:
@@ -260,6 +467,11 @@ class BotPlayer:
         if result:
             return result
 
+        # Combat scrolls (Fireball, Lightning, Fear)
+        result = self._use_combat_scrolls(gs, nearest_enemy)
+        if result:
+            return result
+
         # Melee: auto-fight step (move toward or attack)
         if dist == 1:
             self.strategy = "COMBAT"
@@ -276,10 +488,32 @@ class BotPlayer:
 
     def _try_warrior_abilities(self, gs: GameState, nearest_enemy: Enemy,
                                hp_pct: float) -> tuple[str, dict[str, Any]] | None:
-        """Whirlwind on groups, Shield Wall when desperate."""
+        """Warrior combat abilities: Battle Cry, Cleaving Strike, Whirlwind, Shield Wall."""
         p = gs.player
         if p.player_class != "warrior":
             return None
+
+        # Battle Cry (class ability): freeze all enemies within 6 tiles for 5 turns
+        # Use when 2+ enemies visible, or any boss visible, and off cooldown
+        if p.ability_cooldown <= 0 and p.mana >= CHARACTER_CLASSES["warrior"]["ability_cost"]:
+            visible_enemies = sum(1 for e in gs.enemies
+                                 if e.is_alive() and (e.x, e.y) in gs.visible
+                                 and abs(e.x - p.x) + abs(e.y - p.y) <= B["battle_cry_range"])
+            if visible_enemies >= 2 or (nearest_enemy.boss and visible_enemies >= 1):
+                self.strategy = "COMBAT"
+                self.target_desc = f"BATTLE CRY! ({visible_enemies} targets)"
+                return ("use_class_ability", {})
+
+        # Cleaving Strike: 2x damage, ignores defense — use on tough enemies/bosses
+        if ("Cleaving Strike" in p.known_abilities
+                and p.mana >= B["cleaving_strike_cost"]
+                and abs(nearest_enemy.x - p.x) <= 1
+                and abs(nearest_enemy.y - p.y) <= 1):
+            # Use on bosses or enemies with high defense (>5) or high HP (>50)
+            if nearest_enemy.boss or nearest_enemy.defense > 5 or nearest_enemy.hp > 50:
+                self.strategy = "COMBAT"
+                self.target_desc = f"cleaving strike -> {nearest_enemy.name}"
+                return ("use_ability", {"ability": "Cleaving Strike"})
 
         # Whirlwind when 3+ adjacent enemies
         if "Whirlwind" in p.known_abilities and p.mana >= B["whirlwind_cost"]:
@@ -291,35 +525,41 @@ class BotPlayer:
                 self.target_desc = f"whirlwind ({adj_count} adjacent)"
                 return ("use_ability", {"ability": "Whirlwind"})
 
-        # Shield Wall when HP < 30% and no heal available
+        # Shield Wall when HP < 50% and enemies visible (proactive, not just desperate)
         if ("Shield Wall" in p.known_abilities and p.mana >= B["shield_wall_cost"]
-                and "Shield Wall" not in p.status_effects and hp_pct < 0.3):
-            has_heal = any(it.item_type == "potion" and it.identified and it.data.get("effect") == "Healing"
-                          for it in p.inventory)
-            if not has_heal:
-                self.strategy = "COMBAT"
-                self.target_desc = "shield wall (low HP)"
-                return ("use_ability", {"ability": "Shield Wall"})
+                and "Shield Wall" not in p.status_effects and hp_pct < 0.5):
+            self.strategy = "COMBAT"
+            self.target_desc = "shield wall"
+            return ("use_ability", {"ability": "Shield Wall"})
 
         return None
 
     def _try_rogue_abilities(self, gs: GameState, nearest_enemy: Enemy,
                              hp_pct: float) -> tuple[str, dict[str, Any]] | None:
-        """Backstab bosses, Smoke Bomb when outnumbered and hurt."""
+        """Backstab, Poison Blade, Smoke Bomb."""
         p = gs.player
         if p.player_class != "rogue":
             return None
 
-        # Backstab before engaging bosses
+        # Backstab before engaging bosses or tough enemies (HP > 80)
         if ("Backstab" in p.known_abilities and p.mana >= B["backstab_cost"]
-                and nearest_enemy.boss and "Backstab" not in p.status_effects):
+                and "Backstab" not in p.status_effects
+                and (nearest_enemy.boss or nearest_enemy.hp > 80)):
             self.strategy = "COMBAT"
             self.target_desc = f"backstab -> {nearest_enemy.name}"
             return ("use_ability", {"ability": "Backstab"})
 
-        # Smoke Bomb when HP < 30% and 2+ enemies visible
-        if ("Smoke Bomb" in p.known_abilities and p.mana >= B["smoke_bomb_cost"]
-                and hp_pct < 0.3):
+        # Poison Blade: apply poison to melee attacks for 10 turns
+        if ("Poison Blade" in p.known_abilities and p.mana >= B.get("poison_blade_cost", 8)
+                and "Poison Blade" not in p.status_effects
+                and not any(r == "poison" for r in nearest_enemy.resists)):
+            self.strategy = "COMBAT"
+            self.target_desc = f"poison blade vs {nearest_enemy.name}"
+            return ("use_ability", {"ability": "Poison Blade"})
+
+        # Smoke Bomb when HP < 40% and 2+ enemies visible
+        if ("Smoke Bomb" in p.known_abilities and p.mana >= B.get("smoke_bomb_cost", 8)
+                and hp_pct < 0.4):
             visible_count = sum(1 for e in gs.enemies
                                if e.is_alive() and (e.x, e.y) in gs.visible)
             if visible_count >= 2:
@@ -403,9 +643,11 @@ class BotPlayer:
         p = gs.player
         hp_pct = p.hp / p.max_hp if p.max_hp > 0 else 0
 
-        # Pick up items on current tile
+        # Pick up items on current tile (skip if inventory full, unless gold)
         items_here = [i for i in gs.items if i.x == p.x and i.y == p.y]
-        if items_here:
+        has_gold = any(i.item_type == "gold" for i in items_here)
+        has_room = len(p.inventory) < p.carry_capacity
+        if items_here and (has_gold or has_room):
             self.strategy = "LOOT"
             self.target_desc = "pickup"
             return ("pickup", {})
@@ -416,6 +658,20 @@ class BotPlayer:
             self.target_desc = "praying"
             return ("pray", {})
 
+        # Use Mapping scroll ASAP on each floor (reveals entire map including stairs)
+        if not self._enemies_visible(gs):
+            for item in p.inventory:
+                if (item.item_type == "scroll"
+                        and (item.identified or item.data.get("effect") in gs.id_scrolls)
+                        and item.data.get("effect") == "Mapping"):
+                    self.strategy = "SCROLL"
+                    self.target_desc = "mapping scroll"
+                    return ("use_scroll", {"item": item})
+            # Other utility scrolls (Enchant, Identify)
+            result = self._use_utility_scrolls(gs)
+            if result:
+                return result
+
         # Solve puzzle if stairs are locked (any time, not just late-game)
         stx, sty = gs.stair_down
         if gs.explored[sty][stx] and gs.tiles[sty][stx] == T_STAIRS_LOCKED:
@@ -423,19 +679,29 @@ class BotPlayer:
             if result:
                 return result
 
-        # Descend stairs when floor is explored enough
+        # Descend stairs — always go down when standing on them
+        # The sooner we progress, the less likely we timeout
         if gs.tiles[p.y][p.x] == T_STAIRS_DOWN:
-            explored_pct = self._floor_explored_pct(gs)
-            if explored_pct > 0.4 or (explored_pct > 0.2 and hp_pct > 0.5):
-                self.strategy = "DESCEND"
-                self.target_desc = f"floor {p.floor + 1}"
-                return ("descend", {})
+            self.strategy = "DESCEND"
+            self.target_desc = f"floor {p.floor + 1}"
+            return ("descend", {})
 
-        # After 150+ turns on a floor, prioritize finding stairs
-        if gs.turn_count > 150 * p.floor and p.floor < MAX_FLOORS:
+        # Actively path to stairs as soon as we know where they are
+        if p.floor < MAX_FLOORS:
+            sx, sy = gs.stair_down
+            if gs.explored[sy][sx] and gs.tiles[sy][sx] == T_STAIRS_DOWN:
+                step = astar(gs.tiles, p.x, p.y, sx, sy, max_steps=200)
+                if step:
+                    self.strategy = "DESCEND"
+                    self.target_desc = "heading to stairs"
+                    return ("move", {"dx": step[0], "dy": step[1]})
+
+        # After N turns on a floor, prioritize finding stairs (urgency mode)
+        floor_turns = gs.turn_count - self._floor_start_turn
+        if floor_turns > 120 and p.floor < MAX_FLOORS:
             sx, sy = gs.stair_down
             if gs.tiles[sy][sx] == T_STAIRS_DOWN:
-                step = astar(gs.tiles, p.x, p.y, sx, sy, max_steps=80)
+                step = astar(gs.tiles, p.x, p.y, sx, sy, max_steps=200)
                 if step:
                     self.strategy = "DESCEND"
                     self.target_desc = "urgently seeking stairs"
@@ -472,31 +738,66 @@ class BotPlayer:
                 return ("move", {"dx": dx, "dy": dy})
 
         if not self._explore_target:
-            self._explore_target = _bfs_unexplored(gs)
+            # Bias exploration toward tiles far from start (stairs are placed maximally far)
+            self._explore_target = self._find_explore_target(gs)
 
         if self._explore_target:
             tx, ty = self._explore_target
-            step = astar(gs.tiles, p.x, p.y, tx, ty, max_steps=50)
+            step = astar(gs.tiles, p.x, p.y, tx, ty, max_steps=200)
             if step:
                 self.strategy = "EXPLORE"
                 self.target_desc = "unexplored"
                 return ("move", {"dx": step[0], "dy": step[1]})
             else:
-                self._explore_target = None  # Unreachable, pick new target
+                # Far target unreachable — fall back to nearest unexplored
+                self._explore_target = None
+                fallback = _bfs_unexplored(gs)
+                if fallback:
+                    self._explore_target = fallback
+                    step = astar(gs.tiles, p.x, p.y, fallback[0], fallback[1], max_steps=200)
+                    if step:
+                        self.strategy = "EXPLORE"
+                        self.target_desc = "unexplored (nearby)"
+                        return ("move", {"dx": step[0], "dy": step[1]})
 
         # Find stairs if fully explored
         sx, sy = gs.stair_down
         if gs.tiles[sy][sx] == T_STAIRS_DOWN and p.floor < MAX_FLOORS:
-            step = astar(gs.tiles, p.x, p.y, sx, sy, max_steps=80)
+            step = astar(gs.tiles, p.x, p.y, sx, sy, max_steps=200)
             if step:
                 self.strategy = "DESCEND"
                 self.target_desc = "heading to stairs"
                 return ("move", {"dx": step[0], "dy": step[1]})
 
-        # Floor-level stall detection: if 500+ turns on this floor and barely moving,
+        # When stuck 200+ turns, use Mapping scroll to reveal entire floor
+        floor_turns2 = gs.turn_count - self._floor_start_turn
+        if floor_turns2 > 200:
+            for item in p.inventory:
+                if (item.item_type == "scroll"
+                        and (item.identified or item.data.get("effect") in gs.id_scrolls)
+                        and item.data.get("effect") == "Mapping"):
+                    self.strategy = "ESCAPE"
+                    self.target_desc = "mapping (stuck)"
+                    return ("use_scroll", {"item": item})
+
+        # When stuck 300+ turns, use Teleport scroll/spell to reposition
+        if floor_turns2 > 300:
+            for item in p.inventory:
+                if (item.item_type == "scroll"
+                        and (item.identified or item.data.get("effect") in gs.id_scrolls)
+                        and item.data.get("effect") == "Teleport"):
+                    self.strategy = "ESCAPE"
+                    self.target_desc = "teleport (stuck)"
+                    return ("use_scroll", {"item": item})
+            # Mages can cast Teleport
+            if "Teleport" in p.known_spells and p.mana >= SPELLS["Teleport"]["cost"]:
+                self.strategy = "ESCAPE"
+                self.target_desc = "teleport spell (stuck)"
+                return ("cast_spell", {"spell": "Teleport"})
+
+        # Floor-level stall detection: if 200+ turns on this floor and barely moving,
         # bias movement toward stairs coordinates (random walk, not pathfind)
-        floor_turns = gs.turn_count - self._floor_start_turn
-        if floor_turns > 500 and len(self._floor_tiles_visited) < 30:
+        if floor_turns2 > 200 and len(self._floor_tiles_visited) < 50:
             sx, sy = gs.stair_down
             dx = 1 if sx > p.x else (-1 if sx < p.x else 0)
             dy = 1 if sy > p.y else (-1 if sy < p.y else 0)
@@ -532,9 +833,15 @@ class BotPlayer:
         return any(e.is_alive() and (e.x, e.y) in gs.visible and not e.disguised for e in gs.enemies)
 
     def _nearest_visible_enemy(self, gs: GameState) -> Enemy | None:
+        """Find nearest visible enemy, prioritizing bosses on floor 20."""
         p = gs.player
         nearest: Enemy | None = None
         nd: int = 999
+        # On floor 20, prioritize the Abyssal Horror
+        if p.floor == MAX_FLOORS:
+            for e in gs.enemies:
+                if e.is_alive() and e.boss and (e.x, e.y) in gs.visible:
+                    return e
         for e in gs.enemies:
             if e.is_alive() and (e.x, e.y) in gs.visible:
                 d = abs(e.x - p.x) + abs(e.y - p.y)
@@ -622,12 +929,179 @@ class BotPlayer:
         # Sort by distance, try pathfinding to nearest
         switch_targets.sort(key=lambda t: abs(t[0] - p.x) + abs(t[1] - p.y))
         for tx, ty in switch_targets:
-            step = astar(gs.tiles, p.x, p.y, tx, ty, max_steps=80)
+            step = astar(gs.tiles, p.x, p.y, tx, ty, max_steps=200)
             if step:
                 self.strategy = "PUZZLE"
                 self.target_desc = f"switch at ({tx},{ty})"
                 return ("move", {"dx": step[0], "dy": step[1]})
         return None
+
+    def _use_utility_scrolls(self, gs: GameState) -> tuple[str, dict[str, Any]] | None:
+        """Use non-combat scrolls: Enchant on weapon, Mapping, Identify."""
+        p = gs.player
+        for item in p.inventory:
+            if item.item_type != "scroll":
+                continue
+            eff = item.data.get("effect", "")
+            is_id = item.identified or eff in gs.id_scrolls
+            if is_id and eff == "Enchant" and p.weapon:
+                self.strategy = "SCROLL"
+                self.target_desc = "enchant weapon"
+                return ("use_scroll", {"item": item})
+            # Mapping is handled at higher priority in _decide_exploration
+            if is_id and eff == "Identify":
+                # Only use if we have unidentified items
+                if any(not it.identified for it in p.inventory):
+                    self.strategy = "SCROLL"
+                    self.target_desc = "identify scroll"
+                    return ("use_scroll", {"item": item})
+        # Use unknown scrolls if safe (no enemies visible, HP > 60%)
+        hp_pct = p.hp / p.max_hp if p.max_hp > 0 else 0
+        if hp_pct > 0.6 and not self._enemies_visible(gs):
+            for item in p.inventory:
+                if item.item_type == "scroll" and not item.identified:
+                    eff = item.data.get("effect", "")
+                    if eff not in gs.id_scrolls:
+                        self.strategy = "SCROLL"
+                        self.target_desc = "unknown scroll (safe)"
+                        return ("use_scroll", {"item": item})
+        return None
+
+    def _use_combat_scrolls(self, gs: GameState, enemy: Enemy) -> tuple[str, dict[str, Any]] | None:
+        """Use combat scrolls: Fireball, Lightning, Fear against enemies."""
+        p = gs.player
+        for item in p.inventory:
+            if item.item_type != "scroll":
+                continue
+            eff = item.data.get("effect", "")
+            is_id = item.identified or eff in gs.id_scrolls
+            if not is_id:
+                continue
+            if eff == "Fireball":
+                self.strategy = "SCROLL"
+                self.target_desc = "fireball scroll!"
+                return ("use_scroll", {"item": item})
+            if eff == "Lightning":
+                self.strategy = "SCROLL"
+                self.target_desc = "lightning scroll!"
+                return ("use_scroll", {"item": item})
+            if eff == "Fear" and not enemy.boss:
+                visible_count = sum(1 for e in gs.enemies
+                                   if e.is_alive() and (e.x, e.y) in gs.visible)
+                if visible_count >= 2:
+                    self.strategy = "SCROLL"
+                    self.target_desc = "fear scroll!"
+                    return ("use_scroll", {"item": item})
+        return None
+
+    def _pre_buff_for_boss(self, gs: GameState, enemy: Enemy) -> tuple[str, dict[str, Any]] | None:
+        """Use Strength potions and Shield Wall before engaging bosses."""
+        if not enemy.boss:
+            return None
+        p = gs.player
+        # Use Strength potion if available and not already buffed
+        if "Strength" not in p.status_effects:
+            for item in p.inventory:
+                if (item.item_type == "potion" and item.identified
+                        and item.data.get("effect") == "Strength"):
+                    self.strategy = "BUFF"
+                    self.target_desc = f"strength potion vs {enemy.name}"
+                    return ("use_item", {"item": item, "type": "potion"})
+        # Use Resistance potion if available
+        if "Resistance" not in p.status_effects:
+            for item in p.inventory:
+                if (item.item_type == "potion" and item.identified
+                        and item.data.get("effect") == "Resistance"):
+                    self.strategy = "BUFF"
+                    self.target_desc = f"resistance potion vs {enemy.name}"
+                    return ("use_item", {"item": item, "type": "potion"})
+        # Mana Shield if mage
+        if (p.player_class == "mage" and "Mana Shield" in p.known_spells
+                and "Mana Shield" not in p.status_effects
+                and p.mana >= SPELLS["Mana Shield"]["cost"]):
+            self.strategy = "BUFF"
+            self.target_desc = f"mana shield vs {enemy.name}"
+            return ("cast_spell", {"spell": "Mana Shield"})
+        # Shield Wall if warrior
+        if (p.player_class == "warrior" and "Shield Wall" in p.known_abilities
+                and "Shield Wall" not in p.status_effects
+                and p.mana >= B["shield_wall_cost"]):
+            self.strategy = "BUFF"
+            self.target_desc = f"shield wall vs {enemy.name}"
+            return ("use_ability", {"ability": "Shield Wall"})
+        return None
+
+    def _choose_branch(self, gs: GameState, floor_num: int) -> str:
+        """Smart branch selection — avoid lava branches without fire resist."""
+        branch_a_key, branch_b_key = BRANCH_CHOICES[floor_num]
+        branch_a = BRANCH_DEFS[branch_a_key]
+        branch_b = BRANCH_DEFS[branch_b_key]
+        p = gs.player
+        has_fire_resist = "fire" in p.player_resists()
+
+        # Score each branch (lower = safer)
+        has_poison_resist = "poison" in p.player_resists()
+
+        def score(key: str, bdef: dict[str, Any]) -> int:
+            s = 0
+            # Lava is the #1 killer — heavily penalize without fire resist
+            if bdef.get("lava_boost", 0) >= 2.0 and not has_fire_resist:
+                s += 100
+            elif bdef.get("lava_boost", 0) >= 1.0 and not has_fire_resist:
+                s += 30
+            # Poison enemies are dangerous without resist
+            enemy_pool = bdef.get("enemy_pool", [])
+            if not has_poison_resist:
+                poison_enemies = sum(1 for e in enemy_pool
+                                    if ENEMY_TYPES.get(e, {}).get("poison_chance", 0) > 0)
+                s += poison_enemies * 15
+            # Extra enemies and traps are moderate threats
+            s += bdef.get("extra_enemies", 0) * 5
+            s += bdef.get("extra_traps", 0) * 3
+            return s
+
+        score_a = score(branch_a_key, branch_a)
+        score_b = score(branch_b_key, branch_b)
+
+        if score_a <= score_b:
+            return branch_a_key
+        return branch_b_key
+
+    def _find_explore_target(self, gs: GameState) -> tuple[int, int] | None:
+        """Find unexplored tile, biased toward tiles far from floor start position.
+
+        Since stairs are placed to maximize distance from the start room,
+        exploring toward the far side of the map first finds stairs faster.
+        Scans all reachable unexplored tiles (not just nearby ones) to
+        properly identify the far corner of the map.
+        """
+        p = gs.player
+        sx, sy = self._floor_start_pos
+        # BFS from player to find ALL reachable unexplored tiles
+        visited: set[tuple[int, int]] = set()
+        queue = deque([(p.x, p.y)])
+        visited.add((p.x, p.y))
+        candidates: list[tuple[int, int]] = []
+        while queue:
+            cx, cy = queue.popleft()
+            for dx, dy in [(-1, 0), (1, 0), (0, -1), (0, 1)]:
+                nx, ny = cx + dx, cy + dy
+                if (nx, ny) in visited:
+                    continue
+                if nx < 0 or nx >= MAP_W or ny < 0 or ny >= MAP_H:
+                    continue
+                if gs.tiles[ny][nx] not in WALKABLE:
+                    continue
+                visited.add((nx, ny))
+                if not gs.explored[ny][nx]:
+                    candidates.append((nx, ny))
+                queue.append((nx, ny))
+        if not candidates:
+            return _bfs_unexplored(gs)  # Fallback to standard BFS
+        # Pick the candidate farthest from the floor start position
+        # This beelines toward the far side where stairs are placed
+        candidates.sort(key=lambda t: -(abs(t[0] - sx) + abs(t[1] - sy)))
+        return candidates[0]
 
     def _floor_explored_pct(self, gs: GameState) -> float:
         explored = sum(1 for row in gs.explored for c in row if c)
@@ -642,7 +1116,7 @@ def _update_explored_from_fov(gs: GameState) -> None:
             gs.explored[my][mx] = True
 
 
-def _bot_execute_action(gs: GameState, action: str, params: dict[str, Any]) -> bool:
+def _bot_execute_action(gs: GameState, action: str, params: dict[str, Any], bot: BotPlayer | None = None) -> bool:
     """Execute a bot action on the game state. Returns True if turn was spent."""
     p = gs.player
     if action == "move":
@@ -680,15 +1154,25 @@ def _bot_execute_action(gs: GameState, action: str, params: dict[str, Any]) -> b
         return True
     elif action == "fire":
         return fire_projectile_headless(gs, params["dx"], params["dy"])
+    elif action == "use_scroll":
+        item = params["item"]
+        use_scroll(gs, item)
+        return True
     elif action == "descend":
         if p.floor < MAX_FLOORS:
             new_floor = p.floor + 1
             if new_floor in BRANCH_CHOICES and new_floor not in gs.branch_choices:
-                _get_game()._choose_branch_headless(gs, new_floor)
+                # Use bot's smart branch selection if available
+                if bot and hasattr(bot, '_choose_branch'):
+                    choice = bot._choose_branch(gs, new_floor)
+                    gs.branch_choices[new_floor] = choice
+                    gs.msg(f"You enter {BRANCH_DEFS[choice]['name']}...", C_YELLOW)
+                else:
+                    _get_game()._choose_branch_headless(gs, new_floor)
             gs.generate_floor(new_floor)
             return True
         elif p.floor == MAX_FLOORS:
-            if not any(e.boss and e.etype == "dread_lord" and e.is_alive() for e in gs.enemies):
+            if not any(e.boss and e.etype == "abyssal_horror" and e.is_alive() for e in gs.enemies):
                 gs.victory = True
                 gs.game_over = True
                 return True
@@ -735,6 +1219,8 @@ def _bot_execute_action(gs: GameState, action: str, params: dict[str, Any]) -> b
         return False
     elif action == "use_ability":
         return use_ability_headless(gs, params["ability"])
+    elif action == "use_class_ability":
+        return use_class_ability(gs)
     elif action == "use_alchemy":
         return use_alchemy_table(gs)
     elif action == "interact_pedestal":
@@ -782,7 +1268,7 @@ def bot_game_loop(scr: Any, speed: float = 0.08, max_turns: int = 5000) -> None:
             auto_apply_levelup(gs.player)
 
         action, params = bot.decide(gs)
-        turn_spent = _bot_execute_action(gs, action, params)
+        turn_spent = _bot_execute_action(gs, action, params, bot=bot)
 
         if turn_spent:
             gs.turn_count += 1
@@ -882,12 +1368,12 @@ def bot_batch_mode(num_games: int = 10, player_class: str | None = None,
             gs = _get_game().GameState(headless=True, player_class=game_class)
             _get_game()._init_new_game(gs)
             bot = BotPlayer()
-            max_turns = 10000
-            max_iterations = max_turns * 3  # Safety: prevent infinite no-turn loops
+            max_turns = 15000
+            no_turn_streak = 0  # Safety: detect infinite no-turn loops
 
-            iterations = 0
-            while gs.running and not gs.game_over and gs.turn_count < max_turns and iterations < max_iterations:
-                iterations += 1
+            last_floor = 1
+            floor_start_turn = 0
+            while gs.running and not gs.game_over and gs.turn_count < max_turns:
                 fov_radius = gs.player.get_torch_radius()
                 if "Blindness" in gs.player.status_effects:
                     fov_radius = 1
@@ -898,11 +1384,24 @@ def bot_batch_mode(num_games: int = 10, player_class: str | None = None,
                 while gs.player.pending_levelups:
                     auto_apply_levelup(gs.player)
 
+                # Diagnostic: log floor progress and stuck detection
+                if gs.player.floor != last_floor:
+                    floor_turns = gs.turn_count - floor_start_turn
+                    import sys
+                    print(f"  G{i+1} [{game_class}] F{last_floor}→F{gs.player.floor} in {floor_turns}t (total {gs.turn_count}t)", file=sys.stderr)
+                    last_floor = gs.player.floor
+                    floor_start_turn = gs.turn_count
+                elif gs.turn_count > 0 and gs.turn_count % 2000 == 0:
+                    import sys
+                    floor_turns = gs.turn_count - floor_start_turn
+                    print(f"  G{i+1} [{game_class}] STUCK F{gs.player.floor} for {floor_turns}t (strat={bot.strategy} tgt={bot.target_desc})", file=sys.stderr)
+
                 action, params = bot.decide(gs)
-                turn_spent = _bot_execute_action(gs, action, params)
+                turn_spent = _bot_execute_action(gs, action, params, bot=bot)
 
                 if turn_spent:
                     gs.turn_count += 1
+                    no_turn_streak = 0
                     if gs.last_noise > 0:
                         _stealth_detection(gs, gs.last_noise)
                     gs.last_noise = 0
@@ -910,6 +1409,12 @@ def bot_batch_mode(num_games: int = 10, player_class: str | None = None,
                     process_status(gs)
                     if gs.player.hp <= 0:
                         gs.game_over = True
+                else:
+                    no_turn_streak += 1
+                    if no_turn_streak > 100:
+                        # Infinite no-turn loop detected — force a rest
+                        gs.turn_count += 1
+                        no_turn_streak = 0
 
             p = gs.player
             result = {

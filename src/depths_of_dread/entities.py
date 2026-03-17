@@ -433,13 +433,49 @@ def show_levelup_choice(scr: Any, gs: GameState) -> int | None:
 
 
 def auto_apply_levelup(player: Player) -> None:
-    """Auto-apply the best level-up choice (for bot/agent). Picks highest HP option."""
+    """Auto-apply the best level-up choice (for bot/agent).
+
+    Strategy: maximize survivability (HP + DEF) while learning key abilities.
+    Pick Cleave/Lethality when offered AND the next ability is high-value,
+    otherwise tank up. Always learn Heal spell (Arcana) first if available.
+    """
     if not player.pending_levelups:
         return
     levelup_data = player.pending_levelups[0]
     choices = generate_levelup_choices(player)
-    # Bot heuristic: pick the choice with highest HP gain (survival-oriented)
-    best = max(choices, key=lambda c: c["hp"] + c["def"] * 2)
+
+    # Smart ability scoring: weight each choice by combat value
+    def score_choice(c: dict) -> float:
+        s = c["hp"] + c["def"] * 2 + c["str"] * 1.5
+        # Bonus for learning spells via Arcana
+        if c["name"] == "Arcana":
+            spell_list = SPELL_UNLOCK_ORDER.get(player.player_class, [])
+            for spell in spell_list:
+                if spell not in player.known_spells:
+                    if spell == "Heal":
+                        s += 15  # Heal is extremely valuable
+                    elif spell == "Freeze":
+                        s += 12  # Freeze is critical for boss fights
+                    elif spell in ("Fireball", "Chain Lightning", "Lightning Bolt"):
+                        s += 6   # Offensive spells have moderate value
+                    else:
+                        s += 3
+                    break
+        # Bonus for learning class abilities
+        if c["name"] in ("Cleave", "Lethality"):
+            ability_list = ABILITY_UNLOCK_ORDER.get(player.player_class, [])
+            for ability in ability_list:
+                if ability not in player.known_abilities:
+                    if ability in ("Backstab", "Cleaving Strike"):
+                        s += 12  # High-value combat abilities
+                    elif ability in ("Shield Wall", "Whirlwind"):
+                        s += 6   # Moderate value
+                    else:
+                        s += 3   # Low value
+                    break
+        return s
+
+    best = max(choices, key=score_choice)
     apply_levelup_choice(player, levelup_data, best)
     player.pending_levelups.pop(0)
 
