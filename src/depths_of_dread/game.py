@@ -177,6 +177,7 @@ from .persistence import (
     save_game,
     save_lifetime_stats,
     show_lifetime_stats,
+    update_lifetime_stats,
 )
 
 # --- UI / rendering ---
