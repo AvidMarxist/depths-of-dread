@@ -23,7 +23,10 @@ if TYPE_CHECKING:
 
 # Agent-commons: universal agentic testing framework (optional)
 try:
-    sys.path.insert(0, os.path.join(os.path.dirname(os.path.abspath(__file__)), '..', 'agent-commons'))
+    # Repo layout: <root>/src/depths_of_dread/agent.py; agent-commons lives
+    # beside the repo root at <root>/../agent-commons
+    sys.path.insert(0, os.path.join(os.path.dirname(os.path.abspath(__file__)),
+                                    '..', '..', '..', 'agent-commons'))
     from agent_commons import (
         DREAD_FEATURES,
         ActionDistribution,
@@ -133,6 +136,7 @@ class AgentPlayer:
         self._consulted_locked_stairs: bool = False
         self._seen_wall_torch: bool = False
         self._last_consult_turn: int = 0     # Cooldown: min turns between non-critical calls
+        self._last_lowhp_turn: int = -99     # Rate limit for the low_hp trigger
         self._last_state_hash: int | None = None    # State dedup: skip if unchanged
         # --- Health monitoring ---
         self._health_interval: int = 10          # Check every N turns
@@ -322,12 +326,19 @@ class AgentPlayer:
         p = gs.player
         reason: str | None = None
 
+        # Boss visible — highest stakes, must outrank generic enemy trigger
+        if any(e.is_alive() and e.boss and (e.x, e.y) in gs.visible for e in gs.enemies):
+            reason = "boss"
+
         # Enemies visible — combat decisions
-        if self.bot._enemies_visible(gs):
+        elif self.bot._enemies_visible(gs):
             reason = "enemies_visible"
 
-        # Low HP (< 40%) with meaningful choices to make
-        elif p.max_hp > 0 and p.hp / p.max_hp < 0.4:
+        # Low HP (< 40%) — rate-limited so a long low-HP stretch doesn't
+        # trigger a blocking Claude call every single turn
+        elif (p.max_hp > 0 and p.hp / p.max_hp < 0.4
+              and gs.turn_count - self._last_lowhp_turn >= 10):
+            self._last_lowhp_turn = gs.turn_count
             reason = "low_hp"
 
         # Full inventory + item on ground
@@ -343,13 +354,6 @@ class AgentPlayer:
                 if 0 <= nx < MAP_W and 0 <= ny < MAP_H and gs.tiles[ny][nx] == T_SHOP_FLOOR:
                     self._consulted_shop = True
                     reason = "shop"
-                    break
-
-        # Boss visible
-        if reason is None:
-            for e in gs.enemies:
-                if e.is_alive() and e.boss and (e.x, e.y) in gs.visible:
-                    reason = "boss"
                     break
 
         # New floor (just descended) — reset per-floor flags
@@ -531,10 +535,10 @@ class AgentPlayer:
             try:
                 summary_gen = PostRunSummaryReport()
                 game_stats = {
-                    "floor": p.floor, "score": calculate_score(gs) if hasattr(gs, 'player') else 0,
+                    "floor": p.floor, "score": calculate_score(p, gs),
                     "turns": gs.turn_count,
                     "outcome": "victory" if gs.victory else "death",
-                    "cause": getattr(p, 'death_cause', 'unknown'),
+                    "cause": gs.death_cause or "unknown",
                     "hp": p.hp,
                     "duration_s": report.get("game_time_s", 0),
                     "stalls_recovered": self._ac_recovery.total_recoveries if hasattr(self, '_ac_recovery') else 0,
@@ -561,7 +565,7 @@ class AgentPlayer:
                     autopsy_text = autopsy_gen.generate(
                         trace=self._ac_trace,
                         final_state={
-                            "cause": getattr(p, 'death_cause', 'unknown'),
+                            "cause": gs.death_cause or "unknown",
                             "hp": p.hp, "potions": potions, "food": food,
                             "mana": p.mana,
                         })
@@ -1053,12 +1057,10 @@ def agent_game_loop(scr: Any, speed: float = 0.15, max_turns: int = 10000) -> No
     delay_ms = max(10, int(speed * 1000))
     decision_log: deque[dict[str, Any]] = deque(maxlen=50)  # Rolling log of Claude decisions
     pilot_mode: bool = False  # Player takes manual control when True
+    no_turn_streak = 0
 
     while gs.running and not gs.game_over and gs.turn_count < max_turns:
-        fov_radius = gs.player.get_torch_radius()
-        if "Blindness" in gs.player.status_effects:
-            fov_radius = 1
-        compute_fov(gs.tiles, gs.player.x, gs.player.y, fov_radius, gs.visible)
+        compute_fov(gs.tiles, gs.player.x, gs.player.y, gs.fov_radius(), gs.visible)
         _update_explored_from_fov(gs)
 
         # Auto-apply pending level-ups
@@ -1097,6 +1099,7 @@ def agent_game_loop(scr: Any, speed: float = 0.15, max_turns: int = 10000) -> No
 
         if turn_spent:
             gs.turn_count += 1
+            no_turn_streak = 0
             if gs.last_noise > 0:
                 _stealth_detection(gs, gs.last_noise)
             gs.last_noise = 0
@@ -1104,12 +1107,20 @@ def agent_game_loop(scr: Any, speed: float = 0.15, max_turns: int = 10000) -> No
             process_status(gs)
             if gs.player.hp <= 0:
                 gs.game_over = True
+        elif not pilot_mode:
+            no_turn_streak += 1
+            if no_turn_streak > 100:
+                # Agent stuck issuing no-turn actions — tick the world so
+                # blocking statuses (Silence, Fear) can expire
+                gs.turn_count += 1
+                process_enemies(gs)
+                process_status(gs)
+                if gs.player.hp <= 0:
+                    gs.game_over = True
+                no_turn_streak = 0
 
         # Re-compute FOV after action for rendering
-        fov_radius = gs.player.get_torch_radius()
-        if "Blindness" in gs.player.status_effects:
-            fov_radius = 1
-        compute_fov(gs.tiles, gs.player.x, gs.player.y, fov_radius, gs.visible)
+        compute_fov(gs.tiles, gs.player.x, gs.player.y, gs.fov_radius(), gs.visible)
         _update_explored_from_fov(gs)
         render_game(scr, gs)
 
@@ -1234,34 +1245,36 @@ def agent_batch_mode(num_games: int = 10, player_class: str | None = None) -> li
         max_iterations = max_turns * 3  # Safety: prevent infinite no-turn loops
         iterations = 0
 
-        while gs.running and not gs.game_over and gs.turn_count < max_turns and iterations < max_iterations:
-            iterations += 1
-            fov_radius = gs.player.get_torch_radius()
-            if "Blindness" in gs.player.status_effects:
-                fov_radius = 1
-            compute_fov(gs.tiles, gs.player.x, gs.player.y, fov_radius, gs.visible)
-            _update_explored_from_fov(gs)
+        try:
+            while gs.running and not gs.game_over and gs.turn_count < max_turns and iterations < max_iterations:
+                iterations += 1
+                compute_fov(gs.tiles, gs.player.x, gs.player.y, gs.fov_radius(), gs.visible)
+                _update_explored_from_fov(gs)
 
-            # Auto-apply pending level-ups
-            while gs.player.pending_levelups:
-                auto_apply_levelup(gs.player)
+                # Auto-apply pending level-ups
+                while gs.player.pending_levelups:
+                    auto_apply_levelup(gs.player)
 
-            action, params = agent.decide(gs)
-            turn_spent = _bot_execute_action(gs, action, params)
+                action, params = agent.decide(gs)
+                turn_spent = _bot_execute_action(gs, action, params)
 
-            # Track feature interactions
-            action_str = agent.action if hasattr(agent, 'action') else ""
-            tracker.check_state(gs, action_str)
+                # Track feature interactions
+                tracker.check_state(gs, agent.target_desc)
 
-            if turn_spent:
-                gs.turn_count += 1
-                if gs.last_noise > 0:
-                    _stealth_detection(gs, gs.last_noise)
-                gs.last_noise = 0
-                process_enemies(gs)
-                process_status(gs)
-                if gs.player.hp <= 0:
-                    gs.game_over = True
+                if turn_spent:
+                    gs.turn_count += 1
+                    if gs.last_noise > 0:
+                        _stealth_detection(gs, gs.last_noise)
+                    gs.last_noise = 0
+                    process_enemies(gs)
+                    process_status(gs)
+                    if gs.player.hp <= 0:
+                        gs.game_over = True
+        except Exception as exc:  # one crashed game must not sink the batch
+            agent._log("game_crash", {"error": repr(exc)[:300]})
+            gs.death_cause = gs.death_cause or f"crash: {exc}"
+            gs.game_over = True
+            print(f"  Game {i+1:3d}: CRASHED — {exc}")
 
         p = gs.player
         total_claude_calls += agent.claude_calls

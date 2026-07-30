@@ -241,6 +241,8 @@ class GameState:
         self.journal = {}
         self.alchemy_used = set()
         self.puzzles = []
+        self.puzzles_generated = 0  # cumulative across floors (telemetry)
+        self.puzzles_solved = 0
         self.wall_torches = []
         self.vignettes = []
         self.npcs = []
@@ -257,6 +259,7 @@ class GameState:
         self.speedrun_timer = 0
         self.auto_exploring = False
         self.auto_fight_target = None
+        self.floor_cache: dict[int, dict[str, Any]] = {}
         # Shuffle potion/scroll identities per game
         self.potion_ids = {}
         self.scroll_ids = {}
@@ -274,9 +277,47 @@ class GameState:
     def msg(self, text: str, color: int = C_WHITE) -> None:
         self.messages.append((text, color))
 
+    def fov_radius(self) -> int:
+        """Effective sight radius: torch light, capped by Dark mode,
+        overridden by Blindness."""
+        r = self.player.get_torch_radius()
+        if self.challenge_dark:
+            r = min(r, B["dark_mode_fov_cap"])
+        if "Blindness" in self.player.status_effects:
+            r = 1
+        return r
+
+    _FLOOR_STATE_ATTRS = ("tiles", "rooms", "enemies", "items", "shops",
+                          "stair_down", "explored", "wall_torches", "puzzles",
+                          "traps", "vignettes", "npcs")
+
     def generate_floor(self, floor_num: int) -> None:
-        """Delegate to floor_gen module."""
-        generate_floor(self, floor_num)
+        """Generate a floor, caching floors on exit so revisiting via stairs
+        restores prior state instead of rolling a fresh, fully-stocked floor."""
+        prev_floor = self.player.floor
+        if self.tiles is not None and prev_floor != floor_num:
+            self.floor_cache[prev_floor] = {
+                a: getattr(self, a) for a in self._FLOOR_STATE_ATTRS}
+        cached = self.floor_cache.pop(floor_num, None)
+        if cached is None:
+            generate_floor(self, floor_num)
+            return
+        for a, v in cached.items():
+            setattr(self, a, v)
+        self.enemies = [e for e in self.enemies if e.is_alive()]
+        self.player.floor = floor_num
+        self.floors_explored.add(floor_num)
+        self.active_branch = self._get_active_branch(floor_num)
+        self.speedrun_timer = 0
+        self.visible = set()
+        # Arriving from above → stand on the up stairs; from below → down stairs
+        if floor_num > prev_floor:
+            pos = next(((x, y) for y in range(MAP_H) for x in range(MAP_W)
+                        if self.tiles[y][x] == T_STAIRS_UP), None)
+            if pos:
+                self.player.x, self.player.y = pos
+        else:
+            self.player.x, self.player.y = self.stair_down
 
     def _find_spawn_pos(self) -> tuple[int, int] | None:
         from .floor_gen import _find_spawn_pos
@@ -389,10 +430,14 @@ def _show_branch_choice(scr: Any, gs: GameState, floor_num: int) -> str | None:
         if key == ord('1'):
             gs.branch_choices[floor_num] = branch_a_key
             gs.msg(f"You enter {branch_a['name']}...", C_YELLOW)
+            if gs.recorder:
+                gs.recorder.record_branch(floor_num, branch_a_key)
             return branch_a_key
         elif key == ord('2'):
             gs.branch_choices[floor_num] = branch_b_key
             gs.msg(f"You enter {branch_b['name']}...", C_YELLOW)
+            if gs.recorder:
+                gs.recorder.record_branch(floor_num, branch_b_key)
             return branch_b_key
 
 
@@ -404,6 +449,8 @@ def _choose_branch_headless(gs: GameState, floor_num: int) -> str | None:
     choice = random.choice([branch_a_key, branch_b_key])
     gs.branch_choices[floor_num] = choice
     gs.msg(f"You enter {BRANCH_DEFS[choice]['name']}...", C_YELLOW)
+    if gs.recorder:
+        gs.recorder.record_branch(floor_num, choice)
     return choice
 
 
@@ -458,6 +505,7 @@ def _init_new_game(gs: GameState) -> None:
     arrows.count = 10
     gs.player.inventory.append(arrows)
     gs.generate_floor(1)
+    apply_meta_unlocks(gs)
     # Increment lifetime game counter
     lt = load_lifetime_stats()
     lt["total_games"] += 1
@@ -526,6 +574,8 @@ def _cmd_ascend(gs: GameState, scr: Any) -> bool | None:
             render_game(scr, gs)
             curses.napms(500)
             gs.generate_floor(new_floor)
+            if gs.recorder:
+                gs.recorder.record_floor_change(gs)
             return True
         gs.msg("You can't leave yet.", C_WHITE)
     else:
@@ -605,6 +655,18 @@ def _cmd_toggle_torch(gs: GameState, scr: Any) -> None:
 
 def _cmd_quit(gs: GameState, scr: Any) -> None:
     scr.erase()
+    if gs.challenge_ironman:
+        safe_addstr(scr, 10, 20, "IRONMAN: quitting abandons this run. Quit? (y/n)",
+                    curses.color_pair(C_RED))
+        scr.refresh()
+        while True:
+            qk = scr.getch()
+            if qk in (ord('y'), ord('Y')):
+                gs.running = False
+                break
+            elif qk in (ord('n'), ord('N'), ord('c'), ord('C'), 27):
+                break
+        return None
     safe_addstr(scr, 10, 20, "Save and quit? (y/n/c)", curses.color_pair(C_YELLOW))
     safe_addstr(scr, 12, 20, "y=Save & Quit  n=Quit without saving  c=Cancel",
                 curses.color_pair(C_DARK))
@@ -730,9 +792,9 @@ def game_loop(scr: Any) -> None:
 
     show_title(scr)
 
-    # Check for saved game (Phase 7, item 33)
+    # Check for saved game (Phase 7, item 33). Ironman runs never load saves.
     gs = None
-    if save_exists():
+    if save_exists() and not _CHALLENGE_MODES.get("ironman"):
         scr.erase()
         safe_addstr(scr, 10, 20, "Saved game found.", curses.color_pair(C_YELLOW) | curses.A_BOLD)
         safe_addstr(scr, 12, 20, "Continue saved game? (y/n)", curses.color_pair(C_WHITE))
@@ -831,7 +893,19 @@ def game_loop(scr: Any) -> None:
                 check_context_tips(gs)
                 if gs.player.hp <= 0:
                     gs.game_over = True
+            else:
+                # Step failed (blocked, Fear, etc.) — no turn passed, so state
+                # can never change; stop rather than spin forever
+                gs.auto_fighting = False
+                gs.msg("Auto-fight halted.", C_WHITE)
             curses.napms(80)
+            # Check for keypress to cancel
+            scr.nodelay(True)
+            cancel_key = scr.getch()
+            scr.nodelay(False)
+            if cancel_key != -1:
+                gs.auto_fighting = False
+                gs.msg("Auto-fight cancelled.", C_WHITE)
             continue
 
         # Auto-explore loop (Phase 4, item 21)

@@ -115,11 +115,14 @@ def use_scroll(gs: GameState, item: Item) -> None:
         gs.msg(f"FIRE ERUPTS! {kills} enemies caught in the blast!", C_RED)
         gs.enemies = [e for e in gs.enemies if e.is_alive()]
     elif eff == "Mapping":
-        for y in range(MAP_H):
-            for x in range(MAP_W):
-                if gs.tiles[y][x] != T_WALL:
-                    gs.explored[y][x] = True
-        gs.msg("The entire floor is revealed!", C_CYAN)
+        if gs.challenge_dark:
+            gs.msg("The oppressive darkness swallows the magic!", C_MAGENTA)
+        else:
+            for y in range(MAP_H):
+                for x in range(MAP_W):
+                    if gs.tiles[y][x] != T_WALL:
+                        gs.explored[y][x] = True
+            gs.msg("The entire floor is revealed!", C_CYAN)
     elif eff == "Enchant":
         if p.weapon:
             p.weapon.data["bonus"] = p.weapon.data.get("bonus", 0) + B["scroll_enchant_bonus_add"]
@@ -128,6 +131,7 @@ def use_scroll(gs: GameState, item: Item) -> None:
             gs.msg(f"Your {p.weapon.display_name} glows with power!", C_YELLOW)
         elif p.armor:
             p.armor.data["defense"] += B["scroll_enchant_bonus_add"]
+            p.armor.data["bonus"] = p.armor.data.get("bonus", 0) + B["scroll_enchant_bonus_add"]
             gs.msg(f"Your {p.armor.display_name} shimmers!", C_YELLOW)
         else:
             gs.msg("The magic dissipates uselessly.", C_DARK)
@@ -135,7 +139,8 @@ def use_scroll(gs: GameState, item: Item) -> None:
         c = 0
         for e in gs.enemies:
             if abs(e.x-p.x)+abs(e.y-p.y) <= B["scroll_fear_range"] and not e.boss:
-                e.alerted = False
+                e.fleeing = True
+                e.fleeing_turns = B["scroll_fear_duration"]
                 c += 1
         gs.msg(f"{c} enemies flee in terror!", C_MAGENTA)
     elif eff == "Summon":
@@ -262,6 +267,16 @@ def process_status(gs: GameState) -> None:
             return
     for eff in expired:
         gs.msg(f"{eff} wears off.", C_DARK)
+    # Starvation: ticks every turn at 0 hunger, whether moving or standing still
+    if p.hunger <= 0 and not gs.game_over:
+        p.hp -= B["starvation_damage"]
+        if gs.turn_count % 5 == 0:
+            gs.msg("You are starving!", C_RED)
+        if p.hp <= 0:
+            gs.game_over = True
+            gs.death_cause = "starvation"
+            sound_alert(gs, "death")
+            return
     # Mana regen
     if gs.turn_count % MANA_REGEN_INTERVAL == 0 and gs.player.mana < gs.player.max_mana:
         gs.player.mana = min(gs.player.max_mana, gs.player.mana + 1)
@@ -543,6 +558,10 @@ def _launch_projectile(gs: GameState, dx: int, dy: int, proj_type: str, proj_ite
         char = '/' if dx != 0 and dy != 0 else ('-' if dy == 0 else '|')
         color = C_WHITE
     elif proj_type == "wand":
+        if "Silence" in p.status_effects:
+            gs.msg("You are silenced! The wand's magic won't answer!", C_MAGENTA)
+            p.projectiles_fired -= 1
+            return False
         max_range = B["wand_base_range"]
         base_dmg = proj_item.data["dmg"]
         bonus = 0
@@ -659,9 +678,6 @@ def cast_spell_headless(gs: GameState, spell_name: str, direction: tuple[int, in
     if spell_name not in SPELLS:
         return False
     if spell_name not in p.known_spells:
-        return False
-    if "Silence" in p.status_effects:
-        gs.msg("You are silenced! Cannot cast spells!", C_MAGENTA)
         return False
     info = SPELLS[spell_name]
     if p.mana < info["cost"]:
@@ -928,6 +944,9 @@ SPELL_HANDLERS: dict[str, Callable[..., bool]] = {
 def _cast_spell(gs: GameState, scr: Any, spell_name: str, spell_info: dict[str, Any], direction: tuple[int, int] | None = None, target_enemy: Enemy | None = None) -> bool:
     """Execute the spell effect."""
     p = gs.player
+    if "Silence" in p.status_effects:
+        gs.msg("You are silenced! Cannot cast spells!", C_MAGENTA)
+        return False
     p.mana -= spell_info["cost"]
     # Spells generate noise (stealth system)
     gs.last_noise = max(gs.last_noise, _compute_noise(gs, "spell"))
@@ -962,6 +981,9 @@ def use_class_ability(gs: GameState, scr: Any = None) -> bool:
         return False
     if p.mana < cc["ability_cost"]:
         gs.msg(f"Not enough mana for {cc['ability']}! (need {cc['ability_cost']})", C_RED)
+        return False
+    if p.player_class == "mage" and "Silence" in p.status_effects:
+        gs.msg("You are silenced! Cannot channel the blast!", C_MAGENTA)
         return False
 
     p.mana -= cc["ability_cost"]
@@ -1342,6 +1364,7 @@ def _toggle_switch(gs: GameState, sx: int, sy: int) -> None:
             all_on = all(gs.tiles[py][px] == T_SWITCH_ON for px, py in puzzle["positions"])
             if all_on:
                 puzzle["solved"] = True
+                gs.puzzles_solved += 1
                 if puzzle["type"] == "locked_stairs":
                     stx, sty = puzzle["stairs"]
                     gs.tiles[sty][stx] = T_STAIRS_DOWN
@@ -1363,6 +1386,7 @@ def _toggle_switch(gs: GameState, sx: int, sy: int) -> None:
                     gs.msg(f"Pressure plate activated! ({len(puzzle['activated'])}/{len(puzzle['positions'])})", C_YELLOW)
                 if len(puzzle["activated"]) >= len(puzzle["positions"]):
                     puzzle["solved"] = True
+                    gs.puzzles_solved += 1
                     rx, ry, rw, rh = puzzle["room"]
                     gold = random.randint(B["puzzle_room_gold_min"], B["puzzle_room_gold_max"])
                     gs.player.gold += gold
@@ -1390,6 +1414,7 @@ def _interact_pedestal(gs: GameState, px: int, py: int) -> bool:
             all_lit = all(gs.tiles[py2][px2] == T_PEDESTAL_LIT for px2, py2 in puzzle["positions"])
             if all_lit:
                 puzzle["solved"] = True
+                gs.puzzles_solved += 1
                 rx, ry, rw, rh = puzzle["room"]
                 item = gs._random_item(rx + rw//2, ry + rh//2, gs.player.floor + 2)
                 if item:
@@ -1407,6 +1432,7 @@ def _interact_pedestal(gs: GameState, px: int, py: int) -> bool:
                     gs.msg(f"Correct! ({puzzle['current_step']}/{len(puzzle['positions'])})", C_GREEN)
                     if puzzle["current_step"] >= len(puzzle["positions"]):
                         puzzle["solved"] = True
+                        gs.puzzles_solved += 1
                         rx, ry, rw, rh = puzzle["room"]
                         gold = random.randint(B["puzzle_room_gold_min"], B["puzzle_room_gold_max"])
                         gs.player.gold += gold
@@ -1449,8 +1475,8 @@ def enchant_weapon_headless(gs: GameState) -> bool:
     p.weapon.data["enchant_bonus_dmg"] = enchant["bonus_dmg"]
     p.weapon.data["enchant_proc_chance"] = enchant["proc_chance"]
     p.weapon.data["enchant_proc_effect"] = enchant["proc_effect"]
-    old_name = p.weapon.subtype
-    p.weapon.subtype = f"{enchant['name']} {old_name}"
+    old_name = p.weapon.data.get("name", "weapon")
+    p.weapon.data["name"] = f"{enchant['name']} {old_name}"
     gs.msg(f"Your {old_name} is now enchanted with {enchant['name']}!", C_GOLD)
     gs.msg(f"  {enchant['desc']}", C_YELLOW)
     return True
@@ -1467,7 +1493,7 @@ def _interact_npc(gs: GameState, npc: dict[str, Any]) -> None:
         if item:
             item.identified = True
             gs.items.append(item)
-            gs.msg(f"The {npc['name']} gives you a {item.subtype}!", C_GOLD)
+            gs.msg(f"The {npc['name']} gives you a {item.display_name}!", C_GOLD)
 
     elif npc["interaction"] == "buff":
         buff_type = random.choice(["Strength", "Resistance", "Speed"])
@@ -1492,11 +1518,14 @@ def _interact_npc(gs: GameState, npc: dict[str, Any]) -> None:
         gs.msg("'The next boss is vulnerable to fire and cold. Remember that.'", C_YELLOW)
 
     elif npc["interaction"] == "reveal":
-        # Reveal the entire map
-        for y in range(MAP_H):
-            for x in range(MAP_W):
-                gs.explored[y][x] = True
-        gs.msg("The ghost reveals the entire floor to you!", C_MAGENTA)
+        if gs.challenge_dark:
+            gs.msg("The ghost gestures, but the darkness devours its gift...", C_MAGENTA)
+        else:
+            # Reveal the entire map
+            for y in range(MAP_H):
+                for x in range(MAP_W):
+                    gs.explored[y][x] = True
+            gs.msg("The ghost reveals the entire floor to you!", C_MAGENTA)
 
     elif npc["interaction"] == "shop":
         # Mini-shop: give player 2-3 identified items nearby
@@ -1560,8 +1589,24 @@ def player_move(gs: GameState, dx: int, dy: int) -> bool:
     nx, ny = p.x + dx, p.y + dy
     if nx < 0 or nx >= MAP_W or ny < 0 or ny >= MAP_H:
         return False
+    # Constricted (Kraken): can still fight, but moving means struggling free
+    if "Constricted" in p.status_effects:
+        for e in gs.enemies:
+            if e.x == nx and e.y == ny and e.is_alive():
+                player_attack(gs, e)
+                gs.last_noise = max(gs.last_noise, _compute_noise(gs, "combat"))
+                return True
+        if random.random() < B["constrict_escape_base"] + p.strength * 0.02:
+            del p.status_effects["Constricted"]
+            gs.msg("You tear free of the tentacles!", C_GREEN)
+        else:
+            gs.msg("The tentacles hold you fast!", C_RED)
+        return True  # struggling costs the turn either way
     tile = gs.tiles[ny][nx]
-    if tile == T_WALL:
+    if tile == T_STAIRS_LOCKED:
+        gs.msg("The stairway is sealed shut!", C_DARK)
+        return False
+    if tile not in WALKABLE and tile != T_LAVA:
         gs.msg("Blocked!", C_DARK)
         return False
     if tile == T_LAVA:
@@ -1594,6 +1639,14 @@ def player_move(gs: GameState, dx: int, dy: int) -> bool:
         if "Burning" in p.status_effects:
             del p.status_effects["Burning"]
             gs.msg("The water extinguishes the flames!", C_CYAN)
+        # Sunken Library: wading can dissolve a carried scroll
+        if (gs.active_branch and BRANCH_DEFS[gs.active_branch].get("scroll_soak")
+                and random.random() < B["scroll_soak_chance"]):
+            scrolls = [i for i in p.inventory if i.item_type == "scroll"]
+            if scrolls:
+                soaked = random.choice(scrolls)
+                p.inventory.remove(soaked)
+                gs.msg(f"The water soaks your {soaked.display_name} — it dissolves to pulp!", C_RED)
     # Attack enemy
     for e in gs.enemies:
         if e.x == nx and e.y == ny and e.is_alive():
@@ -1604,28 +1657,45 @@ def player_move(gs: GameState, dx: int, dy: int) -> bool:
     p.y = ny
     # Generate noise for movement (stealth system)
     gs.last_noise = max(gs.last_noise, _compute_noise(gs, "walk"))
-    # Trap check
-    _check_traps_on_move(gs, nx, ny)
-    if gs.game_over:
-        return True
-    _passive_trap_detect(gs)
-    # Hunger
+    # Hunger cost for the step (starvation damage ticks in process_status)
     p.hunger = max(0, p.hunger - B["hunger_per_move"])
-    if p.hunger <= 0:
-        p.hp -= B["starvation_damage"]
-        if gs.turn_count % 5 == 0:
-            gs.msg("You are starving!", C_RED)
-        if p.hp <= 0:
-            gs.game_over = True
-            gs.death_cause = "starvation"
-            sound_alert(gs, "death")
     if p.ring and p.ring.data.get("effect") == "hunger":
         p.hunger = max(0, p.hunger - B["hunger_curse_extra"])
     if p.ring and p.ring.data.get("effect") == "regen":
         if gs.turn_count % 3 == 0 and p.hp < p.max_hp:
             p.hp = min(p.max_hp, p.hp + 1)
-    # Auto-pickup
-    pickup = [i for i in gs.items if i.x == nx and i.y == ny]
+    # Trap check
+    _check_traps_on_move(gs, nx, ny)
+    if gs.game_over:
+        return True
+    if (p.x, p.y) != (nx, ny):
+        # A teleport trap moved us; everything below acts on the tile we
+        # just vacated, so the turn ends here
+        return True
+    # Ice sliding (Frozen Abyss): momentum carries you until something stops you
+    if gs.tiles[p.y][p.x] == T_ICE and (dx or dy):
+        slid = False
+        while gs.tiles[p.y][p.x] == T_ICE:
+            ix, iy = p.x + dx, p.y + dy
+            if not (0 <= ix < MAP_W and 0 <= iy < MAP_H):
+                break
+            it_tile = gs.tiles[iy][ix]
+            if it_tile not in WALKABLE:
+                break
+            if any(e.x == ix and e.y == iy and e.is_alive() for e in gs.enemies):
+                break  # slam to a stop against a creature
+            p.x, p.y = ix, iy
+            slid = True
+            _check_traps_on_move(gs, ix, iy)
+            if gs.game_over:
+                return True
+            if (p.x, p.y) != (ix, iy):
+                return True  # teleport trap mid-slide
+        if slid:
+            gs.msg("You slide across the ice!", C_CYAN)
+    _passive_trap_detect(gs)
+    # Auto-pickup (at final position — sliding may have carried us)
+    pickup = [i for i in gs.items if i.x == p.x and i.y == p.y]
     for item in pickup:
         if item.item_type == "gold":
             p.gold += item.data["amount"]
@@ -1658,6 +1728,9 @@ def player_move(gs: GameState, dx: int, dy: int) -> bool:
                     gs.msg(f"Auto-equipped {item.display_name}!", C_YELLOW)
             else:
                 gs.msg("Inventory full!", C_RED)
+    # Refresh position/tile — an ice slide may have carried us past (nx, ny)
+    nx, ny = p.x, p.y
+    tile = gs.tiles[ny][nx]
     # Tile messages
     if tile == T_STAIRS_DOWN:
         gs.msg("Press > to descend.", C_YELLOW)

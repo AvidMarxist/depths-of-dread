@@ -350,14 +350,14 @@ def _cast_light(tiles: list[list[int]], cx: int, cy: int, radius: int, row: int,
                 if 0 <= mx < MAP_W and 0 <= my < MAP_H:
                     visible.add((mx, my))
             if blocked:
-                if 0 <= mx < MAP_W and 0 <= my < MAP_H and tiles[my][mx] == T_WALL:
+                if 0 <= mx < MAP_W and 0 <= my < MAP_H and tiles[my][mx] in OPAQUE:
                     new_start = r_slope
                     continue
                 else:
                     blocked = False
                     start = new_start
             else:
-                if 0 <= mx < MAP_W and 0 <= my < MAP_H and tiles[my][mx] == T_WALL and j < radius:
+                if 0 <= mx < MAP_W and 0 <= my < MAP_H and tiles[my][mx] in OPAQUE and j < radius:
                     blocked = True
                     _cast_light(tiles, cx, cy, radius, j+1, start, l_slope, octant, visible)
                     new_start = r_slope
@@ -396,7 +396,7 @@ def astar(tiles: list[list[int]], sx: int, sy: int, gx: int, gy: int, max_steps:
             nx, ny = cx+ddx, cy+ddy
             if nx < 0 or nx >= MAP_W or ny < 0 or ny >= MAP_H:
                 continue
-            if tiles[ny][nx] == T_WALL or tiles[ny][nx] == T_LAVA:
+            if tiles[ny][nx] not in WALKABLE:
                 continue
             ng = g_score[(cx,cy)] + 1
             if ng > max_steps:
@@ -419,7 +419,8 @@ def _has_los(tiles: list[list[int]], x1: int, y1: int, x2: int, y2: int) -> bool
     while True:
         if x == x2 and y == y2:
             return True
-        if 0 <= y < MAP_H and 0 <= x < MAP_W and tiles[y][x] == T_WALL:
+        # Start tile never blocks its own line (wall torches sit in alcoves)
+        if (x, y) != (x1, y1) and 0 <= y < MAP_H and 0 <= x < MAP_W and tiles[y][x] in OPAQUE:
             return False
         e2 = 2 * err
         if e2 > -dy:

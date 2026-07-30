@@ -237,7 +237,7 @@ class BotPlayer:
                             self.strategy = "BOSS_HEAL"
                             self.target_desc = "healing vs boss"
                             return ("use_item", {"item": item, "type": "potion"})
-                    if p.mana >= SPELLS["Heal"]["cost"]:
+                    if p.mana >= SPELLS["Heal"]["cost"] and "Silence" not in p.status_effects:
                         self.strategy = "BOSS_HEAL"
                         self.target_desc = "heal spell vs boss"
                         return ("cast_spell", {"spell": "Heal"})
@@ -351,7 +351,7 @@ class BotPlayer:
                     self.strategy = "HEAL"
                     self.target_desc = "poisoned! healing"
                     return ("use_item", {"item": item, "type": "potion"})
-            if p.mana >= SPELLS["Heal"]["cost"]:
+            if p.mana >= SPELLS["Heal"]["cost"] and "Silence" not in p.status_effects:
                 self.strategy = "HEAL"
                 self.target_desc = "poisoned! heal spell"
                 return ("cast_spell", {"spell": "Heal"})
@@ -369,7 +369,7 @@ class BotPlayer:
                         self.strategy = "HEAL"
                         self.target_desc = "unknown potion (desperate)"
                         return ("use_item", {"item": item, "type": "potion"})
-            if p.mana >= SPELLS["Heal"]["cost"]:
+            if p.mana >= SPELLS["Heal"]["cost"] and "Silence" not in p.status_effects:
                 self.strategy = "HEAL"
                 self.target_desc = "spell"
                 return ("cast_spell", {"spell": "Heal"})
@@ -601,6 +601,8 @@ class BotPlayer:
                           nearest_enemy: Enemy) -> tuple[str, dict[str, Any]] | None:
         """Chain Lightning, Fireball on groups; Freeze on bosses."""
         p = gs.player
+        if "Silence" in p.status_effects:
+            return None
 
         # Mage: Chain Lightning on 2+ visible enemies
         if (p.player_class == "mage" and "Chain Lightning" in p.known_spells
@@ -678,6 +680,15 @@ class BotPlayer:
             result = self._solve_puzzle(gs)
             if result:
                 return result
+            # No switch puzzle → this is a boss seal (floor 15). Hunt the boss.
+            if not gs.puzzles:
+                boss = next((e for e in gs.enemies if e.is_alive() and e.boss), None)
+                if boss:
+                    step = astar(gs.tiles, p.x, p.y, boss.x, boss.y, max_steps=300)
+                    if step and step != (0, 0):
+                        self.strategy = "BOSS HUNT"
+                        self.target_desc = f"hunting {boss.name}"
+                        return ("move", {"dx": step[0], "dy": step[1]})
 
         # Descend stairs — always go down when standing on them
         # The sooner we progress, the less likely we timeout
@@ -1135,23 +1146,15 @@ def _bot_execute_action(gs: GameState, action: str, params: dict[str, Any], bot:
         return True
     elif action == "cast_spell":
         spell = params["spell"]
-        if spell == "Heal":
-            cast_spell_headless(gs, "Heal")
-        elif spell == "Fireball":
-            cast_spell_headless(gs, "Fireball", direction=(params.get("dx", 0), params.get("dy", 0)))
-        elif spell == "Freeze":
-            cast_spell_headless(gs, "Freeze", target_enemy=params.get("target"))
-        elif spell == "Lightning Bolt":
-            cast_spell_headless(gs, "Lightning Bolt", direction=(params.get("dx", 0), params.get("dy", 0)))
-        elif spell == "Chain Lightning":
-            cast_spell_headless(gs, "Chain Lightning", target_enemy=params.get("target"))
-        elif spell == "Meteor":
-            cast_spell_headless(gs, "Meteor", direction=(params.get("dx", 0), params.get("dy", 0)))
-        elif spell == "Mana Shield":
-            cast_spell_headless(gs, "Mana Shield")
-        elif spell == "Teleport":
-            cast_spell_headless(gs, "Teleport")
-        return True
+        # Report whether the cast actually happened (Silence, bad spell,
+        # missing mana) so failed casts don't burn a phantom turn
+        if spell in ("Fireball", "Lightning Bolt", "Meteor"):
+            return cast_spell_headless(gs, spell, direction=(params.get("dx", 0), params.get("dy", 0)))
+        elif spell in ("Freeze", "Chain Lightning"):
+            return cast_spell_headless(gs, spell, target_enemy=params.get("target"))
+        elif spell in ("Heal", "Mana Shield", "Teleport"):
+            return cast_spell_headless(gs, spell)
+        return False
     elif action == "fire":
         return fire_projectile_headless(gs, params["dx"], params["dy"])
     elif action == "use_scroll":
@@ -1160,6 +1163,8 @@ def _bot_execute_action(gs: GameState, action: str, params: dict[str, Any], bot:
         return True
     elif action == "descend":
         if p.floor < MAX_FLOORS:
+            if gs.tiles[p.y][p.x] != T_STAIRS_DOWN:
+                return False  # not on stairs (or stairs sealed) — illegal descend
             new_floor = p.floor + 1
             if new_floor in BRANCH_CHOICES and new_floor not in gs.branch_choices:
                 # Use bot's smart branch selection if available
@@ -1255,12 +1260,10 @@ def bot_game_loop(scr: Any, speed: float = 0.08, max_turns: int = 5000) -> None:
     show_telemetry = True
     paused = False
     delay_ms = max(10, int(speed * 1000))
+    no_turn_streak = 0
 
     while gs.running and not gs.game_over and gs.turn_count < max_turns:
-        fov_radius = gs.player.get_torch_radius()
-        if "Blindness" in gs.player.status_effects:
-            fov_radius = 1
-        compute_fov(gs.tiles, gs.player.x, gs.player.y, fov_radius, gs.visible)
+        compute_fov(gs.tiles, gs.player.x, gs.player.y, gs.fov_radius(), gs.visible)
         _update_explored_from_fov(gs)
 
         # Auto-apply pending level-ups
@@ -1272,6 +1275,7 @@ def bot_game_loop(scr: Any, speed: float = 0.08, max_turns: int = 5000) -> None:
 
         if turn_spent:
             gs.turn_count += 1
+            no_turn_streak = 0
             if gs.last_noise > 0:
                 _stealth_detection(gs, gs.last_noise)
             gs.last_noise = 0
@@ -1279,12 +1283,20 @@ def bot_game_loop(scr: Any, speed: float = 0.08, max_turns: int = 5000) -> None:
             process_status(gs)
             if gs.player.hp <= 0:
                 gs.game_over = True
+        else:
+            no_turn_streak += 1
+            if no_turn_streak > 100:
+                # Same guard batch mode has: tick the world so blocking
+                # statuses (Silence, Fear) can expire
+                gs.turn_count += 1
+                process_enemies(gs)
+                process_status(gs)
+                if gs.player.hp <= 0:
+                    gs.game_over = True
+                no_turn_streak = 0
 
         # Re-compute FOV after action for rendering
-        fov_radius = gs.player.get_torch_radius()
-        if "Blindness" in gs.player.status_effects:
-            fov_radius = 1
-        compute_fov(gs.tiles, gs.player.x, gs.player.y, fov_radius, gs.visible)
+        compute_fov(gs.tiles, gs.player.x, gs.player.y, gs.fov_radius(), gs.visible)
         _update_explored_from_fov(gs)
         render_game(scr, gs)
 
@@ -1412,8 +1424,13 @@ def bot_batch_mode(num_games: int = 10, player_class: str | None = None,
                 else:
                     no_turn_streak += 1
                     if no_turn_streak > 100:
-                        # Infinite no-turn loop detected — force a rest
+                        # Infinite no-turn loop detected — force a world tick so
+                        # blocking statuses (Silence, Fear) can actually expire
                         gs.turn_count += 1
+                        process_enemies(gs)
+                        process_status(gs)
+                        if gs.player.hp <= 0:
+                            gs.game_over = True
                         no_turn_streak = 0
 
             p = gs.player
@@ -1428,8 +1445,8 @@ def bot_batch_mode(num_games: int = 10, player_class: str | None = None,
                 "score": calculate_score(p, gs),
                 "death_cause": gs.death_cause or ("victory" if gs.victory else "timeout"),
                 "locked_stairs": gs.tiles[gs.stair_down[1]][gs.stair_down[0]] == T_STAIRS_LOCKED,
-                "puzzles": len(gs.puzzles),
-                "puzzles_solved": sum(1 for pz in gs.puzzles if pz["solved"]),
+                "puzzles": gs.puzzles_generated,
+                "puzzles_solved": gs.puzzles_solved,
             }
             results.append(result)
             cls_tag = game_class[0].upper()

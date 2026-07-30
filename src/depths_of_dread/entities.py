@@ -57,7 +57,13 @@ class Item:
             return f"{self.data.get('name', 'Wand')} [{charges}]"
         if self.item_type == "torch":
             return f"{self.data.get('name', 'Torch')} ({self.data.get('fuel', 0)} fuel)"
-        return self.data.get("name", "???")
+        name = self.data.get("name", "???")
+        # Enchanted gear shows its bonus: "Rapier +2"
+        if self.item_type in ("weapon", "armor"):
+            bonus = self.data.get("bonus", 0)
+            if bonus > 0:
+                return f"{name} +{bonus}"
+        return name
 
     @property
     def sell_value(self) -> int:
@@ -101,7 +107,7 @@ class Enemy:
         self.color: int = t["color"]
         self.max_hp: int = t["hp"]
         self.hp: int = t["hp"]
-        self.dmg: int = t["dmg"]
+        self.dmg: tuple[int, int] = t["dmg"]
         self.defense: int = t["defense"]
         self.xp: int = t["xp"]
         self.speed: float = t["speed"]
@@ -110,6 +116,7 @@ class Enemy:
         self.regen: int = t.get("regen", 0)
         self.lifesteal: bool = t.get("lifesteal", False)
         self.energy: float = 0.0
+        self.seen: bool = False  # first-sighting flag for bestiary encounters
         self.alerted: bool = False
         self.alertness: str = "unwary"  # "asleep", "unwary", or "alert"
         self.patrol_dir: tuple[int, int] = random.choice([(0,1),(0,-1),(1,0),(-1,0)])
@@ -128,8 +135,10 @@ class Enemy:
         self.freeze_status_chance: int = t.get("freeze_status_chance", 0)
         self.silence_chance: int = t.get("silence_chance", 0)
         self.poisoned_turns: int = 0  # Poison from player's Poison Blade ability
-        # Fleeing system
+        # Fleeing system (fleeing_turns > 0 = magically induced, expires;
+        # 0 while fleeing = morale-broken, flees until cornered)
         self.fleeing: bool = False
+        self.fleeing_turns: int = 0
         self.flee_threshold: float = t.get("flee_threshold", 0.0)
         # Elemental resistance system
         self.damage_type: str = t.get("damage_type", "physical")
@@ -144,6 +153,9 @@ class Enemy:
         self.breath_cooldown: int = 0
         self.multi_attack: int = t.get("multi_attack", 1)
         self.stun_on_hit: int = t.get("stun_on_hit", 0)
+        # Kraken fields
+        self.ink_cooldown: int = 0
+        self.ink_cooldown_max: int = t.get("ink_cooldown_max", 0)
         # Boss phase tracking
         self.boss_phase: int = 1
         self.boss_phase_turn: int = 0  # Turns since last phase action (e.g., bat summon)
@@ -192,7 +204,6 @@ class Player:
         self.torch_fuel: int = TORCH_MAX_FUEL
         self.torch_lit: bool = True  # Can toggle torch on/off to conserve fuel
         self.status_effects: dict[str, int] = {}
-        self.frozen_enemies: dict[int, int] = {}  # enemy id -> turns remaining
         self.deepest_floor: int = 1
         self.potions_drunk: int = 0
         self.scrolls_read: int = 0

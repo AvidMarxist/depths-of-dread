@@ -459,7 +459,7 @@ class TestBestiary:
         assert gs.bestiary["rat"]["killed"] == 1
 
     def test_bestiary_updated_on_player_attack(self):
-        """player_attack records encounter and damage dealt."""
+        """player_attack records damage dealt."""
         gs = GameState(player_class="warrior")
         gs.generate_floor(1)
         e = Enemy(5, 5, "goblin")
@@ -474,11 +474,10 @@ class TestBestiary:
             if "goblin" in gs.bestiary and gs.bestiary["goblin"]["dmg_dealt"] > 0:
                 break
         assert "goblin" in gs.bestiary
-        assert gs.bestiary["goblin"]["encountered"] >= 1
         assert gs.bestiary["goblin"]["dmg_dealt"] > 0
 
     def test_bestiary_updated_on_enemy_attack(self):
-        """enemy_attack records encounter and damage taken."""
+        """enemy_attack records damage taken."""
         gs = GameState(player_class="warrior")
         gs.generate_floor(1)
         e = Enemy(gs.player.x + 1, gs.player.y, "rat")
@@ -487,7 +486,21 @@ class TestBestiary:
         random.seed(42)
         enemy_attack(gs, e)
         assert "rat" in gs.bestiary
-        assert gs.bestiary["rat"]["encountered"] >= 1
+        assert gs.bestiary["rat"]["dmg_taken"] >= 0
+
+    def test_bestiary_encounter_on_first_sighting(self):
+        """Encounters count once per individual enemy, on first sighting."""
+        gs = GameState(player_class="warrior")
+        gs.generate_floor(1)
+        gs.enemies = []
+        e = Enemy(gs.player.x + 1, gs.player.y, "goblin")
+        gs.enemies.append(e)
+        gs.visible = {(e.x, e.y), (gs.player.x, gs.player.y)}
+        process_enemies(gs)
+        assert gs.bestiary["goblin"]["encountered"] == 1
+        gs.visible = {(e.x, e.y), (gs.player.x, gs.player.y)}
+        process_enemies(gs)
+        assert gs.bestiary["goblin"]["encountered"] == 1  # not double-counted
 
     def test_bestiary_save_load(self):
         """Bestiary data survives save/load cycle."""

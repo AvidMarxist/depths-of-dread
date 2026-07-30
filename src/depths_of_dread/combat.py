@@ -92,7 +92,8 @@ def _award_kill(gs: GameState, enemy: Enemy, msg: str | bool | None = None, drop
         gs.game_over = True
         gs.death_cause = "broke the pacifist oath"
         return True
-    p.xp += enemy.xp
+    xp_gain = max(1, round(enemy.xp * gs.difficulty_mods.get("xp_mult", 1.0)))
+    p.xp += xp_gain
     p.kills += 1
     p.kills_by_type[enemy.etype] = p.kills_by_type.get(enemy.etype, 0) + 1
     _bestiary_record(gs, enemy.etype, "kill")
@@ -100,10 +101,13 @@ def _award_kill(gs: GameState, enemy: Enemy, msg: str | bool | None = None, drop
         p.bosses_killed += 1
     if msg is not False:
         if msg is None:
-            msg = f"You killed the {enemy.name}! (+{enemy.xp} XP)"
+            msg = f"You killed the {enemy.name}! (+{xp_gain} XP)"
         gs.msg(msg, C_GREEN)
-    # Dread Lord defeated — announce The Abyss
+    # Dread Lord defeated — unseal the stairway to The Abyss
     if enemy.etype == "dread_lord":
+        sx, sy = gs.stair_down
+        if gs.tiles[sy][sx] == T_STAIRS_LOCKED:
+            gs.tiles[sy][sx] = T_STAIRS_DOWN
         gs.msg("The Dread Lord falls... but the floor cracks open beneath!", C_RED)
         gs.msg("A stairway into THE ABYSS yawns before you. Dare you descend?", C_MAGENTA)
     # Boss-specific weapon drops (#20)
@@ -120,6 +124,7 @@ def _award_kill(gs: GameState, enemy: Enemy, msg: str | bool | None = None, drop
                 gs.items.append(item)
         if random.random() < B["enemy_gold_drop_chance"]:
             amt = random.randint(B["gold_drop_min"], B["gold_drop_max"]) * min(p.floor, 5)
+            amt = max(1, round(amt * gs.difficulty_mods.get("gold_mult", 1.0)))
             gs.items.append(Item(enemy.x, enemy.y, "gold", 0, {"amount": amt, "name": f"{amt} gold"}))
     return True
 
@@ -310,7 +315,10 @@ def player_attack(gs: GameState, enemy: Enemy) -> None:
         crit = True
     else:
         dmg = max(1, dmg - enemy.defense // B["defense_divisor"])
-        crit = random.random() < B["crit_chance_base"] + (B["crit_chance_per_level"] * p.level)
+        crit_chance = B["crit_chance_base"] + (B["crit_chance_per_level"] * p.level)
+        if p.player_class:
+            crit_chance += CHARACTER_CLASSES.get(p.player_class, {}).get("crit_bonus", 0.0)
+        crit = random.random() < crit_chance
         if crit:
             dmg = int(dmg * B["crit_multiplier"])
     # Determine weapon damage type for resistance checks
@@ -333,7 +341,6 @@ def player_attack(gs: GameState, enemy: Enemy) -> None:
         gs.msg("Fire suppresses the Troll's regeneration!", C_YELLOW)
     enemy.hp -= dmg
     p.damage_dealt += dmg
-    _bestiary_record(gs, enemy.etype, "encounter")
     _bestiary_record(gs, enemy.etype, "dmg_dealt", dmg)
     if backstab:
         gs.msg(f"BACKSTAB! You strike {enemy.name} for {dmg}!", C_GREEN)
@@ -398,7 +405,6 @@ def player_attack(gs: GameState, enemy: Enemy) -> None:
     if not enemy.is_alive():
         _award_kill(gs, enemy, drops=True)
         _check_levelups(gs)
-    enemy.alerted = True
 
 
 def enemy_attack(gs: GameState, enemy: Enemy) -> None:
@@ -434,13 +440,12 @@ def enemy_attack(gs: GameState, enemy: Enemy) -> None:
             gs.msg("Your mana shield shatters!", C_RED)
     p.hp -= dmg
     p.damage_taken += dmg
-    _bestiary_record(gs, enemy.etype, "encounter")
     _bestiary_record(gs, enemy.etype, "dmg_taken", dmg)
     if dmg > 0:
         gs.msg(f"The {enemy.name} hits you for {dmg}!", C_RED)
     else:
         gs.msg(f"The {enemy.name}'s attack is fully absorbed!", C_CYAN)
-    if enemy.lifesteal:
+    if enemy.lifesteal and dmg > 0:
         enemy.hp = min(enemy.max_hp, enemy.hp + dmg//2)
         gs.msg(f"The {enemy.name} drains your life!", C_MAGENTA)
     # Status effect infliction (D&D expansion)
@@ -575,11 +580,15 @@ def process_enemies(gs: GameState) -> None:
             e.hp = min(e.max_hp, e.hp + e.regen)
         if e.summon_cooldown > 0:
             e.summon_cooldown -= 1
+        # First sighting → bestiary encounter (disguised mimics stay hidden)
+        if not e.seen and not e.disguised and (e.x, e.y) in gs.visible:
+            e.seen = True
+            _bestiary_record(gs, e.etype, "encounter")
         # Sleeping enemies do nothing (stealth system)
         if e.alertness == "asleep":
             continue
         dist = abs(e.x - p.x) + abs(e.y - p.y)
-        fov_radius = p.get_torch_radius()
+        fov_radius = gs.fov_radius()
         in_fov = (e.x, e.y) in gs.visible
         if in_fov and dist <= fov_radius:
             # Visual detection: unwary enemies become alert when they see player
@@ -602,42 +611,59 @@ def process_enemies(gs: GameState) -> None:
         e.energy += e.speed
         if e.energy < 1.0:
             continue
-        e.energy -= 1.0
+        # Spend every whole energy point: speed > 1.0 enemies act more than
+        # once per player turn (capped for safety)
+        actions = min(int(e.energy), 3)
+        e.energy -= actions
+        # Magical fear (Scroll of Fear) wears off
+        if e.fleeing and e.fleeing_turns > 0:
+            e.fleeing_turns -= 1
+            if e.fleeing_turns == 0:
+                e.fleeing = False
+                gs.msg(f"The {e.name} regains its courage!", C_YELLOW)
         # Morale check: flee when HP drops below threshold
         if e.flee_threshold > 0 and e.hp <= e.max_hp * e.flee_threshold and not e.fleeing:
             e.fleeing = True
             gs.msg(f"The {e.name} turns to flee!", C_YELLOW)
-        if e.fleeing:
-            _flee_move(gs, e)
-            continue
         # Boss phase transitions
         if e.boss:
             _update_boss_phase(gs, e)
-        if e.ai == "chase":
-            _chase_move(gs, e)
-        elif e.ai == "erratic":
-            _erratic_move(gs, e)
-        elif e.ai == "patrol":
-            if dist <= 6:
+        for _ in range(actions):
+            if not e.is_alive() or gs.game_over or p.hp <= 0:
+                break
+            if e.fleeing:
+                _flee_move(gs, e)
+                continue
+            dist = abs(e.x - p.x) + abs(e.y - p.y)
+            if e.ai == "chase":
                 _chase_move(gs, e)
+            elif e.ai == "erratic":
+                _erratic_move(gs, e)
+            elif e.ai == "patrol":
+                if dist <= 6:
+                    _chase_move(gs, e)
+                else:
+                    _patrol_move(gs, e)
+            elif e.ai == "pack":
+                _pack_move(gs, e)
+            elif e.ai == "ambush":
+                _ambush_move(gs, e)
+            elif e.ai == "ranged":
+                _ranged_move(gs, e)
+            elif e.ai == "summoner":
+                _summoner_move(gs, e)
+            elif e.ai == "mimic":
+                _mimic_move(gs, e)
+            elif e.ai == "phase":
+                _phase_move(gs, e)
+            elif e.ai == "mind_flayer":
+                _mind_flayer_move(gs, e)
+            elif e.ai == "kraken":
+                _kraken_move(gs, e)
             else:
-                _patrol_move(gs, e)
-        elif e.ai == "pack":
-            _pack_move(gs, e)
-        elif e.ai == "ambush":
-            _ambush_move(gs, e)
-        elif e.ai == "ranged":
-            _ranged_move(gs, e)
-        elif e.ai == "summoner":
-            _summoner_move(gs, e)
-        elif e.ai == "mimic":
-            _mimic_move(gs, e)
-        elif e.ai == "phase":
-            _phase_move(gs, e)
-        elif e.ai == "mind_flayer":
-            _mind_flayer_move(gs, e)
-        else:
-            _chase_move(gs, e)
+                _chase_move(gs, e)
+        if e.fleeing:
+            continue
         # Fire aura: deal damage to adjacent player after move
         if e.fire_aura and e.is_alive():
             if abs(e.x - p.x) + abs(e.y - p.y) <= 1:
@@ -921,8 +947,6 @@ def _try_enemy_move(gs: GameState, e: Enemy, dx: int, dy: int) -> None:
         return
     if gs.tiles[ny][nx] not in WALKABLE:
         return
-    if gs.tiles[ny][nx] == T_LAVA:
-        return
     if nx == gs.player.x and ny == gs.player.y:
         enemy_attack(gs, e)
         return
@@ -939,6 +963,30 @@ def _try_enemy_move(gs: GameState, e: Enemy, dx: int, dy: int) -> None:
             break
 
 
+def _kraken_move(gs: GameState, e: Enemy) -> None:
+    """Kraken: sprays blinding ink at range, constricts adjacent prey."""
+    p = gs.player
+    dist = abs(e.x - p.x) + abs(e.y - p.y)
+    if e.ink_cooldown > 0:
+        e.ink_cooldown -= 1
+    elif 2 <= dist <= 6 and (e.x, e.y) in gs.visible:
+        p.status_effects["Blindness"] = max(p.status_effects.get("Blindness", 0),
+                                            B["ink_blind_duration"])
+        gs.msg(f"The {e.name} sprays a cloud of blinding ink!", C_MAGENTA)
+        _bestiary_record(gs, e.etype, "ability", "ink cloud")
+        e.ink_cooldown = e.ink_cooldown_max
+        return
+    if dist <= 1:
+        if ("Constricted" not in p.status_effects
+                and random.random() < B["kraken_constrict_chance"]):
+            p.status_effects["Constricted"] = B["constrict_duration"]
+            gs.msg(f"The {e.name}'s tentacles coil around you!", C_RED)
+            _bestiary_record(gs, e.etype, "ability", "constrict")
+        enemy_attack(gs, e)
+    else:
+        _chase_move(gs, e)
+
+
 def _flee_move(gs: GameState, e: Enemy) -> None:
     """Move enemy away from player. If cornered, stop fleeing and fight."""
     p = gs.player
@@ -952,7 +1000,7 @@ def _flee_move(gs: GameState, e: Enemy) -> None:
             continue
         nx, ny = e.x + cdx, e.y + cdy
         if (0 <= nx < MAP_W and 0 <= ny < MAP_H
-                and gs.tiles[ny][nx] in WALKABLE and gs.tiles[ny][nx] != T_LAVA
+                and gs.tiles[ny][nx] in WALKABLE
                 and not (nx == p.x and ny == p.y)
                 and not any(o.x == nx and o.y == ny and o.is_alive() for o in gs.enemies if o is not e)):
             e.x = nx

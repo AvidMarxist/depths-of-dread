@@ -262,6 +262,14 @@ def save_game(gs: GameState) -> bool:
             "bow_idx": p.inventory.index(p.bow) if p.bow and p.bow in p.inventory else -1,
         },
         "turn_count": gs.turn_count,
+        "difficulty": gs.difficulty,
+        "challenge": {
+            "ironman": gs.challenge_ironman,
+            "speedrun": gs.challenge_speedrun,
+            "pacifist": gs.challenge_pacifist,
+            "dark": gs.challenge_dark,
+            "speedrun_timer": gs.speedrun_timer,
+        },
         "tiles": [[gs.tiles[y][x] for x in range(MAP_W)] for y in range(MAP_H)],
         "explored": [[gs.explored[y][x] for x in range(MAP_W)] for y in range(MAP_H)],
         "stair_down": list(gs.stair_down),
@@ -280,6 +288,8 @@ def save_game(gs: GameState) -> bool:
         "alchemy_used": [list(p) for p in gs.alchemy_used],
         "wall_torches": gs.wall_torches,
         "puzzles": gs.puzzles,
+        "puzzles_generated": gs.puzzles_generated,
+        "puzzles_solved": gs.puzzles_solved,
         "traps": gs.traps,
         "branch_choices": gs.branch_choices,
         "active_branch": gs.active_branch,
@@ -327,7 +337,13 @@ def load_game() -> GameState | None:
         return None  # tampered or corrupted
 
     try:
-        gs = GameState(headless=True)
+        gs = GameState(headless=True, difficulty=data.get("difficulty", "normal"))
+        ch = data.get("challenge", {})
+        gs.challenge_ironman = ch.get("ironman", False)
+        gs.challenge_speedrun = ch.get("speedrun", False)
+        gs.challenge_pacifist = ch.get("pacifist", False)
+        gs.challenge_dark = ch.get("dark", False)
+        gs.speedrun_timer = ch.get("speedrun_timer", 0)
         pd = data["player"]
         p = gs.player
         p.x, p.y = pd["x"], pd["y"]
@@ -404,8 +420,17 @@ def load_game() -> GameState | None:
         gs.shop_discovered = data.get("shop_discovered", False)
         gs.journal = data.get("journal", {})
         gs.alchemy_used = set(tuple(p) for p in data.get("alchemy_used", []))
-        gs.wall_torches = data.get("wall_torches", [])
+        # JSON turns tuples into lists; membership checks elsewhere expect tuples
+        gs.wall_torches = [tuple(t) for t in data.get("wall_torches", [])]
         gs.puzzles = data.get("puzzles", [])
+        for puz in gs.puzzles:
+            for key in ("positions", "activated"):
+                if key in puz:
+                    puz[key] = [tuple(pos) for pos in puz[key]]
+            if "stairs" in puz:
+                puz["stairs"] = tuple(puz["stairs"])
+        gs.puzzles_generated = data.get("puzzles_generated", 0)
+        gs.puzzles_solved = data.get("puzzles_solved", 0)
         gs.traps = data.get("traps", [])
         gs.branch_choices = {int(k): v for k, v in data.get("branch_choices", {}).items()}
         gs.active_branch = data.get("active_branch", None)
@@ -445,7 +470,7 @@ def save_exists() -> bool:
 def _serialize_item(item: Item) -> dict[str, Any]:
     return {
         "x": item.x, "y": item.y, "item_type": item.item_type,
-        "subtype": item.subtype if not isinstance(item.subtype, int) else item.subtype,
+        "subtype": item.subtype,
         "data": item.data, "identified": item.identified,
         "equipped": item.equipped, "count": item.count,
     }
@@ -463,7 +488,17 @@ def _serialize_enemy(e: Enemy) -> dict[str, Any]:
         "energy": e.energy, "frozen_turns": e.frozen_turns,
         "summon_cooldown": e.summon_cooldown,
         "patrol_dir": list(e.patrol_dir),
+        # Floor-scaled / boss-phase-mutated combat stats (older saves fall
+        # back to base ENEMY_TYPES values on load)
+        "dmg": list(e.dmg),
+        "defense": e.defense,
+        "speed": e.speed,
+        "ai": e.ai,
     }
+    if e.lifesteal:
+        d["lifesteal"] = True
+    if e.seen:
+        d["seen"] = True
     # D&D expansion fields (only save non-default)
     if e.disguised:
         d["disguised"] = True
@@ -473,6 +508,8 @@ def _serialize_enemy(e: Enemy) -> dict[str, Any]:
         d["poisoned_turns"] = e.poisoned_turns
     if e.fleeing:
         d["fleeing"] = True
+    if e.fleeing_turns > 0:
+        d["fleeing_turns"] = e.fleeing_turns
     if e.regen_suppressed > 0:
         d["regen_suppressed"] = e.regen_suppressed
     # Expansion phase fields
@@ -508,6 +545,17 @@ def _deserialize_enemy(d: dict[str, Any]) -> Enemy:
     e = Enemy(d["x"], d["y"], d["etype"])
     e.hp = d["hp"]
     e.max_hp = d["max_hp"]
+    if "dmg" in d:
+        e.dmg = tuple(d["dmg"])
+    if "defense" in d:
+        e.defense = d["defense"]
+    if "speed" in d:
+        e.speed = d["speed"]
+    if "ai" in d:
+        e.ai = d["ai"]
+    if d.get("lifesteal"):
+        e.lifesteal = True
+    e.seen = d.get("seen", False)
     e.alerted = d.get("alerted", False)
     e.alertness = d.get("alertness", "alert" if e.alerted else "unwary")
     e.energy = d.get("energy", 0)
@@ -519,6 +567,7 @@ def _deserialize_enemy(d: dict[str, Any]) -> Enemy:
     e.phase_cooldown = d.get("phase_cooldown", 0)
     e.poisoned_turns = d.get("poisoned_turns", 0)
     e.fleeing = d.get("fleeing", False)
+    e.fleeing_turns = d.get("fleeing_turns", 0)
     e.regen_suppressed = d.get("regen_suppressed", 0)
     # Expansion phase fields
     e.boss_phase = d.get("boss_phase", 1)
@@ -550,12 +599,6 @@ class SessionRecorder:
     def _write(self, data: dict[str, Any]) -> None:
         self._file.write(json.dumps(data, separators=(',', ':')) + '\n')
 
-    def record(self, event_type: str, data: dict[str, Any] | None = None) -> None:
-        entry: dict[str, Any] = {"event": event_type, "turn": self._turn}
-        if data:
-            entry.update(data)
-        self._write(entry)
-
     def record_input(self, key_name: str, turn: int) -> None:
         self._turn = turn
         self._write({"event": "input", "key": key_name, "turn": turn})
@@ -568,14 +611,14 @@ class SessionRecorder:
                       "x": p.x, "y": p.y, "kills": p.kills, "gold": p.gold,
                       "level": p.level, "inventory_count": len(p.inventory)})
 
+    def record_branch(self, floor_num: int, branch_key: str) -> None:
+        """Record a branch choice so replays take the same path."""
+        self._write({"event": "branch", "floor": floor_num, "branch": branch_key})
+
     def record_floor_change(self, gs: GameState) -> None:
         self._write({"event": "floor_change", "turn": gs.turn_count,
                       "floor": gs.player.floor,
                       "enemies": len(gs.enemies), "items": len(gs.items)})
-
-    def record_combat(self, enemy_name: str, damage: int, result: str) -> None:
-        self._write({"event": "combat", "turn": self._turn,
-                      "enemy": enemy_name, "damage": damage, "result": result})
 
     def record_death(self, gs: GameState) -> None:
         from .ui import calculate_score
@@ -631,8 +674,9 @@ def list_recordings() -> None:
 
 def replay_session(scr: Any, filepath: str, speed: float = 1.0) -> None:
     """Replay a recorded session visually in the terminal."""
-    from .combat import _stealth_detection, player_move, process_enemies, process_status
+    from .combat import _stealth_detection, process_enemies
     from .game import GameState, _choose_branch_headless, _init_new_game
+    from .items import player_move, process_status
     from .ui import compute_fov, init_colors, render_game, safe_addstr
     curses.curs_set(0)
     scr.nodelay(False)
@@ -647,17 +691,22 @@ def replay_session(scr: Any, filepath: str, speed: float = 1.0) -> None:
     init_event = json.loads(lines[0])
     seed = init_event.get("seed", 0)
 
-    # Collect all input events
+    # Collect input events and recorded branch choices
     input_events = []
+    branch_events: dict[int, str] = {}
     for line in lines[1:]:
         evt = json.loads(line)
         if evt.get("event") == "input":
             input_events.append(evt)
+        elif evt.get("event") == "branch":
+            branch_events[evt["floor"]] = evt["branch"]
 
     # Recreate the game with the same seed
     gs = GameState(seed=seed)
     gs._scr = scr
     _init_new_game(gs)
+    # Pre-seed branch choices so the replay descends the same paths
+    gs.branch_choices.update(branch_events)
 
     MOVE_KEYS_BY_NAME = {
         'UP': (0,-1), 'DOWN': (0,1), 'LEFT': (-1,0), 'RIGHT': (1,0),
@@ -696,9 +745,13 @@ def replay_session(scr: Any, filepath: str, speed: float = 1.0) -> None:
                         _choose_branch_headless(gs, new_floor)
                     gs.generate_floor(new_floor)
                     turn_spent = True
-                elif not any(e.boss and e.etype == "dread_lord" and e.is_alive() for e in gs.enemies):
+                elif not any(e.boss and e.etype == "abyssal_horror" and e.is_alive() for e in gs.enemies):
                     gs.victory = True
                     gs.game_over = True
+        elif key_name == '<':
+            if gs.tiles[gs.player.y][gs.player.x] == T_STAIRS_UP and gs.player.floor > 1:
+                gs.generate_floor(gs.player.floor - 1)
+                turn_spent = True
         elif key_name == '.':
             p = gs.player
             if p.hp < p.max_hp and p.hunger > B["rest_hunger_threshold"]:
@@ -728,10 +781,7 @@ def replay_session(scr: Any, filepath: str, speed: float = 1.0) -> None:
                 gs.game_over = True
 
         # Render with replay overlay
-        fov_radius = gs.player.get_torch_radius()
-        if "Blindness" in gs.player.status_effects:
-            fov_radius = 1
-        compute_fov(gs.tiles, gs.player.x, gs.player.y, fov_radius, gs.visible)
+        compute_fov(gs.tiles, gs.player.x, gs.player.y, gs.fov_radius(), gs.visible)
         render_game(scr, gs)
         # Overlay
         progress = f"REPLAY [{idx+1}/{total}] Speed: {speed:.1f}x  [Space]=Pause [q]=Quit [+/-]=Speed"

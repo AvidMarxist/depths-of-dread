@@ -299,6 +299,13 @@ BALANCE: dict[str, Any] = {
     "scroll_enchant_bonus_add": 2,    # Scroll of Enchant: +bonus to weapon/armor
     "scroll_enchant_dmg_add": 1,      # Scroll of Enchant: +dmg to weapon (lo and hi)
     "scroll_fear_range": 8,           # Scroll of Fear: max Manhattan distance
+    "scroll_fear_duration": 8,        # Scroll of Fear: turns enemies flee
+    "dark_mode_fov_cap": 4,           # Dark challenge: max sight radius
+    "scroll_soak_chance": 0.20,       # Sunken Library: chance wading ruins a scroll
+    "kraken_constrict_chance": 0.40,  # Kraken: chance to grab an adjacent player
+    "constrict_duration": 4,          # Turns constricted if you never break free
+    "constrict_escape_base": 0.35,    # Base escape chance (+2%/STR)
+    "ink_blind_duration": 4,          # Kraken ink cloud: Blindness turns
     "scroll_lightning_range": 10,     # Scroll of Lightning: max target distance
     "scroll_lightning_min": 20,       # Scroll of Lightning: min damage
     "scroll_lightning_max": 40,       # Scroll of Lightning: max damage
@@ -557,6 +564,7 @@ T_TRAP_VISIBLE: int = 18   # Revealed trap (renders as '^')
 T_ENCHANT_ANVIL: int = 19  # Enchanting station (Phase 4)
 T_FOUNTAIN: int = 20       # Healing fountain
 T_SECRET_WALL: int = 21    # Hidden wall (looks like T_WALL until searched)
+T_ICE: int = 22            # Slippery ice — you slide until something stops you
 
 TILE_CHARS: dict[int, str] = {
     T_WALL: '#', T_FLOOR: '.', T_CORRIDOR: '.', T_DOOR: '+',
@@ -571,6 +579,7 @@ TILE_CHARS: dict[int, str] = {
     T_ENCHANT_ANVIL: '&', # Enchanting station
     T_FOUNTAIN: '{',      # Healing fountain
     T_SECRET_WALL: '#',   # Looks like a normal wall
+    T_ICE: ',',           # Slippery ice
 }
 
 # Unicode tile characters — richer glyphs for terminals with UTF-8 support
@@ -597,6 +606,7 @@ TILE_CHARS_UNICODE: dict[int, str] = {
     T_ENCHANT_ANVIL: '\u0394', # Δ Delta — enchanting anvil
     T_FOUNTAIN: '\u03a9',      # Ω Omega — fountain basin
     T_SECRET_WALL: '\u2588',   # █ Full block — looks like normal wall
+    T_ICE: '\u2591',           # ░ Light shade — sheet ice
 }
 
 
@@ -607,10 +617,14 @@ def get_tile_char(tile: int) -> str:
     return TILE_CHARS.get(tile, ' ')
 
 
+# Tiles that block sight: secret walls must look AND act like walls, and
+# wall-torch tiles are wall alcoves
+OPAQUE: set[int] = {T_WALL, T_SECRET_WALL, T_WALL_TORCH}
+
 WALKABLE: set[int] = {T_FLOOR, T_CORRIDOR, T_DOOR, T_STAIRS_DOWN, T_STAIRS_UP,
             T_WATER, T_SHOP_FLOOR, T_SHRINE, T_ALCHEMY_TABLE,
             T_PEDESTAL_UNLIT, T_PEDESTAL_LIT, T_SWITCH_OFF, T_SWITCH_ON,
-            T_TRAP_HIDDEN, T_TRAP_VISIBLE, T_ENCHANT_ANVIL, T_FOUNTAIN}
+            T_TRAP_HIDDEN, T_TRAP_VISIBLE, T_ENCHANT_ANVIL, T_FOUNTAIN, T_ICE}
 
 THEMES: list[str] = [
     "Dungeon", "Dungeon", "Dungeon",
@@ -718,6 +732,31 @@ BRANCH_DEFS: dict[str, dict[str, Any]] = {
         "mini_boss_floor": 14,
         "mini_boss": "inferno_king",
     },
+    "frozen_abyss": {
+        "name": "The Frozen Abyss",
+        "desc": "Sheet ice — you slide until something stops you",
+        "theme": "Frozen Abyss",
+        "floors": (17, 18, 19),
+        "water_boost": 0.0,
+        "lava_boost": 0.0,
+        "ice_boost": 4.0,      # room floors freeze over
+        "enemy_pool": ["frost_revenant", "ice_golem", "wraith", "banshee", "shadow_wyrm"],
+        "mini_boss_floor": 19,
+        "mini_boss": "frost_titan",
+    },
+    "sunken_library": {
+        "name": "The Sunken Library",
+        "desc": "Drowned archives — rich loot, but water ruins scrolls",
+        "theme": "Sunken Library",
+        "floors": (17, 18, 19),
+        "water_boost": 4.0,
+        "lava_boost": 0.0,
+        "scroll_soak": True,   # wading can dissolve carried scrolls
+        "bonus_scrolls": 4,    # extra scrolls per floor — risk vs reward
+        "enemy_pool": ["drowned_scholar", "mind_flayer", "wraith", "phase_spider", "banshee"],
+        "mini_boss_floor": 19,
+        "mini_boss": "kraken",
+    },
 }
 
 # Branch choice mapping: floor → (branch_A, branch_B)
@@ -726,6 +765,7 @@ BRANCH_CHOICES: dict[int, tuple[str, str]] = {
     5: ("flooded_crypts", "burning_pits"),
     10: ("mind_halls", "beast_warrens"),
     13: ("void_rift", "infernal_forge"),
+    17: ("frozen_abyss", "sunken_library"),
 }
 
 # ============================================================
@@ -762,25 +802,31 @@ USE_UNICODE: bool = _CAN_UNICODE
 # Graphics mode names
 GRAPHICS_OLD_SCHOOL = "Old School"
 GRAPHICS_NEW = "Slightly Less Old School"
+GRAPHICS_8BIT = "8-Bit"
+
+GRAPHICS_MODE: str = GRAPHICS_NEW if _CAN_UNICODE else GRAPHICS_OLD_SCHOOL
 
 
 def toggle_graphics() -> str:
-    """Toggle between Old School (ASCII) and Slightly Less Old School (Unicode).
-    Returns the name of the new mode."""
-    global USE_UNICODE
-    if USE_UNICODE:
-        USE_UNICODE = False
-        return GRAPHICS_OLD_SCHOOL
-    elif _CAN_UNICODE:
+    """Cycle graphics modes: Old School (ASCII) → Slightly Less Old School
+    (Unicode) → 8-Bit (Unicode + NES-style background tiles). Modes the
+    terminal can't display are skipped. Returns the new mode name."""
+    global USE_UNICODE, GRAPHICS_MODE
+    if GRAPHICS_MODE == GRAPHICS_OLD_SCHOOL and _CAN_UNICODE:
+        GRAPHICS_MODE = GRAPHICS_NEW
         USE_UNICODE = True
-        return GRAPHICS_NEW
+    elif GRAPHICS_MODE == GRAPHICS_NEW and HAS_256_COLORS and C_8B_WATER:
+        GRAPHICS_MODE = GRAPHICS_8BIT
+        USE_UNICODE = True
     else:
-        return GRAPHICS_OLD_SCHOOL  # terminal doesn't support unicode
+        GRAPHICS_MODE = GRAPHICS_OLD_SCHOOL
+        USE_UNICODE = False
+    return GRAPHICS_MODE
 
 
 def graphics_mode_name() -> str:
     """Return the name of the current graphics mode."""
-    return GRAPHICS_NEW if USE_UNICODE else GRAPHICS_OLD_SCHOOL
+    return GRAPHICS_MODE
 
 # ---- 256-color themed palettes ----
 # Each theme defines 4 color pair indices: wall_lit, wall_dim, floor_lit, floor_dim
@@ -809,6 +855,8 @@ THEME_PALETTE_256: dict[str, tuple[int, int, int, int]] = {
     "Trapped Halls":     (247, 241, 239, 236),    # Cold grey
     "Void Rift":         (141, 99,  62,  233),    # Shifting purple-blue
     "Infernal Forge":    (202, 160, 94,  234),    # Molten orange
+    "Frozen Abyss":      (81,  25,  153, 236),    # Glacial cyan-blue
+    "Sunken Library":    (66,  23,  187, 236),    # Drowned teal / parchment
 }
 
 # Extended 256-color pairs for water, lava, and special tiles
@@ -816,6 +864,41 @@ C_WATER_256: int = 0   # Set at runtime
 C_LAVA_256: int = 0    # Set at runtime
 C_GOLD_256: int = 0    # Set at runtime
 C_PLAYER_256: int = 0  # Set at runtime
+
+# ---- 8-Bit mode ----
+# NES-flavored look: floors get a dark background tint so rooms read as
+# solid panels; water/lava/doors/stairs get saturated fg-on-bg blocks.
+_8BIT_BASE_PAIR: int = 100  # theme floor pairs: 2 per theme (lit, dim)
+_8BIT_FLOOR_BG: int = 234   # shared dark room background
+_8BIT_FLOOR_BG_DIM: int = 232
+
+# 8-bit special pairs (fg, bg) — set at runtime by init_colors
+C_8B_WATER: int = 0    # bright cyan on deep blue
+C_8B_LAVA: int = 0     # yellow on red
+C_8B_DOOR: int = 0     # tan on brown
+C_8B_STAIRS: int = 0   # bright yellow on dark green
+C_8B_TRAP: int = 0     # red on floor bg
+C_8B_FEATURE: int = 0  # gold on floor bg (pedestals, switches, anvils)
+
+
+# Entities (enemies/items/NPCs) sit on the tinted floor: 16 pairs mapping the
+# base color palette to a 256-color fg on the shared floor background
+_8BIT_ENTITY_BASE: int = 160
+_8BIT_ENTITY_FG: dict[int, int] = {
+    C_WHITE: 252, C_RED: 196, C_GREEN: 77, C_BLUE: 69, C_YELLOW: 221,
+    C_MAGENTA: 171, C_CYAN: 87, C_DARK: 245, C_GOLD: 220, C_LAVA: 208,
+    C_WATER: 45, C_PLAYER: 231, C_UI: 87, C_TITLE: 221, C_BOSS: 203,
+    C_SHRINE: 228,
+}
+
+
+def _get_8bit_floor_pairs(theme_name: str) -> tuple[int, int]:
+    """Return (floor_lit_pair, floor_dim_pair) for a theme in 8-Bit mode."""
+    themes = list(THEME_PALETTE_256.keys())
+    if theme_name not in themes:
+        theme_name = "Dungeon"
+    idx = themes.index(theme_name)
+    return (_8BIT_BASE_PAIR + idx * 2, _8BIT_BASE_PAIR + idx * 2 + 1)
 
 def _get_theme_pairs(theme_name: str) -> tuple[int, int, int, int]:
     """Return (wall_pair, wall_dim_pair, floor_pair, floor_dim_pair) for a theme.
@@ -842,6 +925,7 @@ def _floor_theme_name(floor_num: int, active_branch: str | None = None) -> str:
 def init_colors() -> None:
     global HAS_COLORS, HAS_256_COLORS
     global C_WATER_256, C_LAVA_256, C_GOLD_256, C_PLAYER_256
+    global C_8B_WATER, C_8B_LAVA, C_8B_DOOR, C_8B_STAIRS, C_8B_TRAP, C_8B_FEATURE
     if not curses.has_colors():
         HAS_COLORS = False
         return
@@ -886,6 +970,28 @@ def init_colors() -> None:
         curses.init_pair(C_GOLD_256, 220, -1)     # Rich gold
         C_PLAYER_256 = special_base + 3
         curses.init_pair(C_PLAYER_256, 231, 25)   # Bright white on rich blue
+
+        # 8-Bit mode pairs (only meaningful if COLOR_PAIRS allows; modern
+        # ncurses supports 256+ pairs)
+        if curses.COLOR_PAIRS > _8BIT_BASE_PAIR + len(THEME_PALETTE_256) * 2 + 8:
+            for i, (_theme, (_w, _wd, floor_fg, floor_dim_fg)) in enumerate(THEME_PALETTE_256.items()):
+                curses.init_pair(_8BIT_BASE_PAIR + i * 2, floor_fg, _8BIT_FLOOR_BG)
+                curses.init_pair(_8BIT_BASE_PAIR + i * 2 + 1, floor_dim_fg, _8BIT_FLOOR_BG_DIM)
+            sp8 = _8BIT_BASE_PAIR + len(THEME_PALETTE_256) * 2
+            C_8B_WATER = sp8
+            curses.init_pair(C_8B_WATER, 51, 24)      # bright cyan on deep blue
+            C_8B_LAVA = sp8 + 1
+            curses.init_pair(C_8B_LAVA, 226, 124)     # yellow on red
+            C_8B_DOOR = sp8 + 2
+            curses.init_pair(C_8B_DOOR, 223, 94)      # tan on brown
+            C_8B_STAIRS = sp8 + 3
+            curses.init_pair(C_8B_STAIRS, 229, 22)    # pale yellow on green
+            C_8B_TRAP = sp8 + 4
+            curses.init_pair(C_8B_TRAP, 196, _8BIT_FLOOR_BG)
+            C_8B_FEATURE = sp8 + 5
+            curses.init_pair(C_8B_FEATURE, 220, _8BIT_FLOOR_BG)
+            for base_color, fg in _8BIT_ENTITY_FG.items():
+                curses.init_pair(_8BIT_ENTITY_BASE + base_color, fg, _8BIT_FLOOR_BG)
 
 
 def safe_color_pair(pair_num: int) -> int:
@@ -1022,6 +1128,12 @@ ENEMY_TYPES: dict[str, dict[str, Any]] = {
     "trap_master":   {"name": "Trap Master",   "char": 'X', "color": C_YELLOW,  "hp": 65,  "dmg": (5,10), "defense": 3, "xp": 130,  "speed": 1.1, "ai": "ranged",   "min_floor": 4,  "max_floor": 4,  "boss": True, "flee_threshold": 0.0},
     "void_herald":   {"name": "Void Herald",   "char": 'V', "color": C_MAGENTA, "hp": 180, "dmg": (10,18),"defense": 10,"xp": 400,  "speed": 1.0, "ai": "mind_flayer","min_floor": 14,"max_floor": 14, "boss": True, "flee_threshold": 0.0, "paralyze_chance": 0.35, "psychic_range": 7, "resists": ["cold", "poison"]},
     "inferno_king":  {"name": "Inferno King",  "char": 'K', "color": C_LAVA,    "hp": 190, "dmg": (11,20),"defense": 9, "xp": 420,  "speed": 0.9, "ai": "chase",    "min_floor": 14, "max_floor": 14, "boss": True, "flee_threshold": 0.0, "fire_aura": True, "damage_type": "fire", "resists": ["fire"], "vulnerable": ["cold"]},
+    # --- Floor 17-19 branch denizens (Frozen Abyss / Sunken Library) ---
+    "frost_revenant":{"name": "Frost Revenant","char": 'v', "color": C_CYAN,    "hp": 65,  "dmg": (8,14), "defense": 4, "xp": 130,  "speed": 1.0, "ai": "chase",    "min_floor": 17, "max_floor": 19, "flee_threshold": 0.0, "freeze_status_chance": 0.20, "damage_type": "cold", "resists": ["cold"], "vulnerable": ["fire"]},
+    "ice_golem":     {"name": "Ice Golem",     "char": 'I', "color": C_WHITE,   "hp": 120, "dmg": (10,17),"defense": 9, "xp": 170,  "speed": 0.5, "ai": "chase",    "min_floor": 17, "max_floor": 19, "flee_threshold": 0.0, "damage_type": "cold", "resists": ["cold", "poison"], "vulnerable": ["fire"]},
+    "drowned_scholar":{"name": "Drowned Scholar","char": 's', "color": C_WATER, "hp": 70,  "dmg": (8,14), "defense": 3, "xp": 140,  "speed": 0.9, "ai": "chase",    "min_floor": 17, "max_floor": 19, "flee_threshold": 0.0, "silence_chance": 0.20, "damage_type": "cold", "resists": ["cold"], "vulnerable": ["fire"]},
+    "frost_titan":   {"name": "Frost Titan",   "char": 'T', "color": C_BOSS,    "hp": 220, "dmg": (12,22),"defense": 10, "xp": 500, "speed": 0.7, "ai": "chase",    "min_floor": 19, "max_floor": 19, "boss": True, "flee_threshold": 0.0, "freeze_status_chance": 0.30, "damage_type": "cold", "resists": ["cold", "poison"], "vulnerable": ["fire"]},
+    "kraken":        {"name": "Kraken",        "char": 'K', "color": C_WATER,   "hp": 200, "dmg": (10,18),"defense": 7, "xp": 500,  "speed": 0.9, "ai": "kraken",   "min_floor": 19, "max_floor": 19, "boss": True, "flee_threshold": 0.0, "ink_cooldown_max": 6, "damage_type": "cold", "resists": ["cold", "poison"], "vulnerable": ["fire"]},
     # --- Phase 2 Apex Enemies (rare, powerful late-game) ---
     "ancient_dragon":{"name": "Ancient Dragon", "char": 'D', "color": C_LAVA,    "hp": 200, "dmg": (10,20), "defense": 10, "xp": 500,  "speed": 0.8, "ai": "chase",    "min_floor": 12, "max_floor": 15, "flee_threshold": 0.0, "fire_aura": True, "breath_weapon": "fire", "breath_range": 5, "breath_cooldown_max": 4, "damage_type": "fire", "resists": ["fire"], "vulnerable": ["cold"], "apex": True},
     "hydra":         {"name": "Hydra",          "char": 'H', "color": C_GREEN,   "hp": 180, "dmg": (8,16),  "defense": 7,  "xp": 450,  "speed": 0.7, "ai": "chase",    "min_floor": 11, "max_floor": 15, "flee_threshold": 0.0, "regen": 3, "multi_attack": 3, "damage_type": "poison", "resists": ["poison"], "vulnerable": ["fire"], "apex": True},

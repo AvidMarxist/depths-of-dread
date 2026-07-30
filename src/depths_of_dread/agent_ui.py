@@ -311,9 +311,9 @@ def _pilot_process_key(gs: GameState, scr: Any, key: int) -> bool:
         return player_move(gs, dx, dy)
     elif key == ord('>'):
         if p.floor == MAX_FLOORS:
-            boss_alive = any(e.boss and e.etype == "dread_lord" and e.is_alive() for e in gs.enemies)
+            boss_alive = any(e.boss and e.etype == "abyssal_horror" and e.is_alive() for e in gs.enemies)
             if boss_alive:
-                gs.msg("The Dread Lord still lives!", C_RED)
+                gs.msg("The Abyssal Horror still lives!", C_RED)
             else:
                 gs.victory = True
                 gs.game_over = True
@@ -334,8 +334,10 @@ def _pilot_process_key(gs: GameState, scr: Any, key: int) -> bool:
         items_here = [i for i in gs.items if i.x == p.x and i.y == p.y]
         for it in items_here:
             if it.item_type == "gold":
-                p.gold += it.count
-                gs.msg(f"Picked up {it.count} gold.", C_GOLD)
+                amt = it.data.get("amount", 0)
+                p.gold += amt
+                p.gold_earned += amt
+                gs.msg(f"Picked up {amt} gold.", C_GOLD)
                 gs.items.remove(it)
             elif len(p.inventory) < p.carry_capacity or it.item_type == "scroll":
                 p.inventory.append(it)
@@ -353,12 +355,10 @@ def _pilot_process_key(gs: GameState, scr: Any, key: int) -> bool:
         gs.msg("No potions.", C_WHITE)
         return False
     elif key == ord('E'):
-        # Eat food
+        # Eat food (use_food handles nutrition, stats, and Mystery Meat)
         food = [i for i in p.inventory if i.item_type == "food" and not i.equipped]
         if food:
-            p.hunger = min(100.0, p.hunger + B["food_restore"])
-            p.inventory.remove(food[0])
-            gs.msg("You eat some food.", C_GREEN)
+            use_food(gs, food[0])
             return True
         gs.msg("No food.", C_WHITE)
         return False

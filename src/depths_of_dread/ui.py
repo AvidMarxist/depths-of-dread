@@ -14,9 +14,13 @@ import types
 from collections import deque
 from typing import TYPE_CHECKING, Any
 
+# Runtime color state (HAS_256_COLORS, C_*_256 pairs) is mutated by
+# init_colors() AFTER curses starts — read it via the module so we see
+# live values, not the stale False/0 snapshot a star-import would give us
+from . import constants as const
 from .combat import player_attack, process_enemies
 from .constants import *
-from .constants import _floor_theme_name, _get_theme_pairs, get_tile_char
+from .constants import _floor_theme_name, _get_8bit_floor_pairs, _get_theme_pairs, get_tile_char
 from .entities import Item, Player
 from .mapgen import _has_los, astar, compute_fov
 
@@ -38,6 +42,15 @@ def _get_game() -> types.ModuleType:
 # RENDERING
 # ============================================================
 
+def _entity_attr(base_color: int) -> int:
+    """Color attr for an entity glyph. In 8-Bit mode entities pick up the
+    tinted floor background so they don't punch holes in the room panel."""
+    if const.GRAPHICS_MODE == GRAPHICS_8BIT and const.C_8B_WATER:
+        if base_color in const._8BIT_ENTITY_FG:
+            return curses.color_pair(const._8BIT_ENTITY_BASE + base_color)
+    return curses.color_pair(base_color)
+
+
 def render_map(scr: Any, gs: GameState) -> None:
     p = gs.player
     cam_x = max(0, min(p.x - VIEW_W//2, MAP_W - VIEW_W))
@@ -58,7 +71,7 @@ def render_map(scr: Any, gs: GameState) -> None:
                 gs.explored[my][mx] = True
 
             if mx == p.x and my == p.y:
-                player_pair = C_PLAYER_256 if HAS_256_COLORS else C_PLAYER
+                player_pair = const.C_PLAYER_256 if const.HAS_256_COLORS else C_PLAYER
                 safe_addstr(scr, sy, sx, '@', curses.color_pair(player_pair) | curses.A_BOLD)
                 continue
 
@@ -72,21 +85,31 @@ def render_map(scr: Any, gs: GameState) -> None:
                 if enemy_here:
                     if enemy_here.disguised:
                         # Disguised mimic looks like gold
-                        gold_pair = C_GOLD_256 if HAS_256_COLORS else C_GOLD
-                        safe_addstr(scr, sy, sx, '$',
-                                   curses.color_pair(gold_pair) | curses.A_BOLD)
+                        safe_addstr(scr, sy, sx, '$', _entity_attr(C_GOLD) | curses.A_BOLD)
                     elif enemy_here.alertness == "asleep":
                         # Asleep enemies render with 'z' and dim
                         safe_addstr(scr, sy, sx, 'z',
-                                   curses.color_pair(C_DARK) | curses.A_DIM)
+                                   _entity_attr(C_DARK) | curses.A_DIM)
                     else:
-                        attr = curses.color_pair(enemy_here.color)
+                        attr = _entity_attr(enemy_here.color)
                         if enemy_here.boss:
                             attr |= curses.A_BOLD
                         elif enemy_here.alertness == "alert":
                             attr |= curses.A_BOLD
                         # unwary enemies render at normal brightness (no A_BOLD)
                         safe_addstr(scr, sy, sx, enemy_here.char, attr)
+                    continue
+
+            # NPCs
+            if in_fov:
+                npc_here = None
+                for npc in gs.npcs:
+                    if npc["x"] == mx and npc["y"] == my and not npc.get("interacted"):
+                        npc_here = npc
+                        break
+                if npc_here:
+                    safe_addstr(scr, sy, sx, npc_here.get("char", '&'),
+                               _entity_attr(npc_here.get("color", C_YELLOW)) | curses.A_BOLD)
                     continue
 
             # Items
@@ -98,7 +121,22 @@ def render_map(scr: Any, gs: GameState) -> None:
                         break
                 if item_here:
                     safe_addstr(scr, sy, sx, item_here.char,
-                               curses.color_pair(item_here.color) | curses.A_BOLD)
+                               _entity_attr(item_here.color) | curses.A_BOLD)
+                    continue
+
+            # Revealed traps stay marked once found, even out of FOV
+            if in_fov or gs.explored[my][mx]:
+                trap_here = None
+                for trap in gs.traps:
+                    if (trap["x"] == mx and trap["y"] == my
+                            and trap["visible"] and not trap["disarmed"]):
+                        trap_here = trap
+                        break
+                if trap_here:
+                    attr = _entity_attr(C_RED)
+                    if in_fov:
+                        attr |= curses.A_BOLD
+                    safe_addstr(scr, sy, sx, get_tile_char(T_TRAP_VISIBLE), attr)
                     continue
 
             # Vignettes (show char on map before player steps on them)
@@ -110,7 +148,7 @@ def render_map(scr: Any, gs: GameState) -> None:
                         break
                 if vig_here:
                     safe_addstr(scr, sy, sx, '?',
-                               curses.color_pair(C_MAGENTA) | curses.A_BOLD)
+                               _entity_attr(C_MAGENTA) | curses.A_BOLD)
                     continue
 
             # Tiles
@@ -126,8 +164,13 @@ def _draw_tile(scr: Any, sy: int, sx: int, tile: int, lit: bool, floor_num: int,
                active_branch: str | None = None) -> None:
     ch = get_tile_char(tile)
 
+    # 8-Bit mode: NES-style background-tinted tiles
+    if const.GRAPHICS_MODE == GRAPHICS_8BIT and const.C_8B_WATER:
+        _draw_tile_8bit(scr, sy, sx, tile, ch, lit, floor_num, active_branch)
+        return
+
     # 256-color themed rendering
-    if HAS_256_COLORS:
+    if const.HAS_256_COLORS:
         theme = _floor_theme_name(floor_num, active_branch)
         wall_p, wall_dim_p, floor_p, floor_dim_p = _get_theme_pairs(theme)
         if lit:
@@ -140,21 +183,23 @@ def _draw_tile(scr: Any, sy: int, sx: int, tile: int, lit: bool, floor_num: int,
             elif tile in (T_STAIRS_DOWN, T_STAIRS_UP):
                 a = curses.color_pair(C_YELLOW) | curses.A_BOLD
             elif tile == T_WATER:
-                a = curses.color_pair(C_WATER_256) | curses.A_BOLD
+                a = curses.color_pair(const.C_WATER_256) | curses.A_BOLD
+            elif tile == T_ICE:
+                a = curses.color_pair(const.C_WATER_256)
             elif tile == T_LAVA:
-                a = curses.color_pair(C_LAVA_256) | curses.A_BOLD
+                a = curses.color_pair(const.C_LAVA_256) | curses.A_BOLD
             elif tile == T_FOUNTAIN:
-                a = curses.color_pair(C_WATER_256) | curses.A_BOLD
+                a = curses.color_pair(const.C_WATER_256) | curses.A_BOLD
             elif tile == T_SHRINE:
                 a = curses.color_pair(C_SHRINE) | curses.A_BOLD
             elif tile == T_ALCHEMY_TABLE:
                 a = curses.color_pair(C_CYAN) | curses.A_BOLD
             elif tile == T_WALL_TORCH:
-                a = curses.color_pair(C_GOLD_256) | curses.A_BOLD
+                a = curses.color_pair(const.C_GOLD_256) | curses.A_BOLD
             elif tile in (T_PEDESTAL_UNLIT, T_SWITCH_OFF):
                 a = curses.color_pair(wall_dim_p)
             elif tile in (T_PEDESTAL_LIT, T_SWITCH_ON):
-                a = curses.color_pair(C_GOLD_256) | curses.A_BOLD
+                a = curses.color_pair(const.C_GOLD_256) | curses.A_BOLD
             elif tile == T_STAIRS_LOCKED:
                 a = curses.color_pair(C_RED) | curses.A_BOLD
             elif tile == T_TRAP_VISIBLE:
@@ -175,6 +220,51 @@ def _draw_tile(scr: Any, sy: int, sx: int, tile: int, lit: bool, floor_num: int,
         return
 
     # Fallback: standard 16-color rendering
+    _draw_tile_16(scr, sy, sx, tile, ch, lit, floor_num)
+
+
+def _draw_tile_8bit(scr: Any, sy: int, sx: int, tile: int, ch: str, lit: bool,
+                    floor_num: int, active_branch: str | None) -> None:
+    """8-Bit mode: rooms render as dark panels, hazards as saturated blocks."""
+    theme = _floor_theme_name(floor_num, active_branch)
+    wall_p, wall_dim_p, _fp, _fdp = _get_theme_pairs(theme)
+    floor8_p, floor8_dim_p = _get_8bit_floor_pairs(theme)
+    if lit:
+        if tile in (T_WALL, T_SECRET_WALL):
+            a = curses.color_pair(wall_p)
+        elif tile in (T_FLOOR, T_CORRIDOR, T_SHOP_FLOOR, T_TRAP_HIDDEN):
+            a = curses.color_pair(floor8_p)
+        elif tile == T_DOOR:
+            a = curses.color_pair(const.C_8B_DOOR) | curses.A_BOLD
+        elif tile in (T_STAIRS_DOWN, T_STAIRS_UP):
+            a = curses.color_pair(const.C_8B_STAIRS) | curses.A_BOLD
+        elif tile == T_STAIRS_LOCKED:
+            a = curses.color_pair(const.C_8B_TRAP) | curses.A_BOLD
+        elif tile in (T_WATER, T_FOUNTAIN):
+            a = curses.color_pair(const.C_8B_WATER) | curses.A_BOLD
+        elif tile == T_ICE:
+            a = curses.color_pair(const.C_8B_WATER)
+        elif tile == T_LAVA:
+            a = curses.color_pair(const.C_8B_LAVA) | curses.A_BOLD
+        elif tile == T_TRAP_VISIBLE:
+            a = curses.color_pair(const.C_8B_TRAP) | curses.A_BOLD
+        elif tile in (T_SHRINE, T_ALCHEMY_TABLE, T_ENCHANT_ANVIL, T_WALL_TORCH,
+                      T_PEDESTAL_UNLIT, T_PEDESTAL_LIT, T_SWITCH_OFF, T_SWITCH_ON):
+            a = curses.color_pair(const.C_8B_FEATURE) | curses.A_BOLD
+        else:
+            a = curses.color_pair(floor8_p)
+    else:
+        if tile in (T_WALL, T_SECRET_WALL):
+            a = curses.color_pair(wall_dim_p)
+        elif tile in (T_STAIRS_DOWN, T_STAIRS_UP):
+            a = curses.color_pair(const.C_8B_STAIRS) | curses.A_DIM
+        else:
+            a = curses.color_pair(floor8_dim_p)
+    safe_addstr(scr, sy, sx, ch, a)
+
+
+def _draw_tile_16(scr: Any, sy: int, sx: int, tile: int, ch: str, lit: bool,
+                  floor_num: int) -> None:
     if lit:
         if tile == T_WALL:
             if floor_num <= 3:
@@ -195,6 +285,8 @@ def _draw_tile(scr: Any, sy: int, sx: int, tile: int, lit: bool, floor_num: int,
             a = curses.color_pair(C_YELLOW) | curses.A_BOLD
         elif tile == T_WATER:
             a = curses.color_pair(C_WATER) | curses.A_BOLD
+        elif tile == T_ICE:
+            a = curses.color_pair(C_CYAN)
         elif tile == T_LAVA:
             a = curses.color_pair(C_LAVA) | curses.A_BOLD
         elif tile == T_SHRINE:
@@ -445,9 +537,7 @@ def render_messages(scr: Any, gs: GameState) -> None:
 
 def render_game(scr: Any, gs: GameState) -> None:
     scr.erase()
-    fov_radius = gs.player.get_torch_radius()
-    if "Blindness" in gs.player.status_effects:
-        fov_radius = 1
+    fov_radius = gs.fov_radius()
     compute_fov(gs.tiles, gs.player.x, gs.player.y, fov_radius, gs.visible)
     # Wall torch lighting (#1): tiles near wall torches are also visible if in LOS
     if gs.wall_torches:
@@ -660,10 +750,33 @@ def show_bestiary(scr: Any, gs: GameState) -> None:
         scr.getch()
         return
 
-    # Pagination
-    page_size = max(1, SCREEN_H - 6)
+    # Pagination by rendered rows (entries take 1-5 rows depending on reveal tier)
+    def _entry_rows(etype: str, data: dict) -> int:
+        edef = ENEMY_TYPES[etype]
+        enc = data["encountered"]
+        rows = 1
+        if enc >= 3:
+            rows += 1
+        if enc >= 5 and data["abilities"]:
+            rows += 1
+        if enc >= 10:
+            rows += 1
+            if edef.get("resists") or edef.get("vulnerable"):
+                rows += 1
+        return rows
+
+    max_rows = SCREEN_H - 5
+    pages: list[list[tuple[str, dict]]] = [[]]
+    rows_used = 0
+    for etype, data in entries:
+        r = _entry_rows(etype, data)
+        if pages[-1] and rows_used + r > max_rows:
+            pages.append([])
+            rows_used = 0
+        pages[-1].append((etype, data))
+        rows_used += r
     page = 0
-    total_pages = max(1, (len(entries) + page_size - 1) // page_size)
+    total_pages = len(pages)
 
     while True:
         scr.erase()
@@ -672,10 +785,7 @@ def show_bestiary(scr: Any, gs: GameState) -> None:
         safe_addstr(scr, 1, 4, "Knowledge grows with each encounter.", curses.color_pair(C_DARK))
 
         y = 3
-        start = page * page_size
-        end = min(start + page_size, len(entries))
-        for i in range(start, end):
-            etype, data = entries[i]
+        for etype, data in pages[page]:
             edef = ENEMY_TYPES[etype]
             enc = data["encountered"]
             killed = data["killed"]
@@ -1083,6 +1193,7 @@ def show_shop(scr: Any, gs: GameState) -> None:
                     p.gold -= si.price
                     p.gold_spent += si.price
                     ic = Item(0, 0, si.item.item_type, si.item.subtype, si.item.data)
+                    ic.count = si.item.count  # stacked ammo sells as a full stack
                     ic.identified = True
                     p.inventory.append(ic)
                     si.sold = True
@@ -1120,93 +1231,6 @@ def calculate_score(p: Player, gs: GameState) -> int:
         score += B["score_victory_bonus"]
     return score
 
-
-def show_death(scr: Any, gs: GameState) -> None:
-    p = gs.player
-    elapsed = int(time.time() - gs.start_time)
-    m, s = elapsed // 60, elapsed % 60
-    scr.erase()
-    _, w = scr.getmaxyx()
-    tomb = [
-        "      _______",
-        "     /       \\",
-        "    /  R.I.P  \\",
-        "   /           \\",
-        "  | HERE LIES A  |",
-        "  | BRAVE BUT    |",
-        "  | FOOLISH      |",
-        "  | ADVENTURER   |",
-        "  |______________|",
-        "  |______________|",
-    ]
-    sy = 1
-    for i, line in enumerate(tomb):
-        safe_addstr(scr, sy+i, max(0,(w-len(line))//2), line, curses.color_pair(C_RED))
-    quip = random.choice(DEATH_QUIPS)
-    safe_addstr(scr, sy+11, max(0,(w-len(quip))//2), f'"{quip}"', curses.color_pair(C_MAGENTA))
-    cause = gs.death_cause or "unknown causes"
-    safe_addstr(scr, sy+12, max(0,(w-len(cause)-10)//2), f"Cause: {cause}", curses.color_pair(C_RED))
-    stats = [
-        f"Floor: {p.deepest_floor}/{MAX_FLOORS}  Level: {p.level}  Kills: {p.kills}",
-        f"Gold: {p.gold} (earned:{p.gold_earned} spent:{p.gold_spent})  Turns: {gs.turn_count}  Time: {m}m{s}s",
-        f"Items: {p.items_found}  Potions: {p.potions_drunk}  Food: {p.foods_eaten}  Torches: {p.torches_grabbed}",
-        f"Spells: {p.spells_cast}  Shots: {p.projectiles_fired}  Traps: {p.traps_triggered}",
-        f"Damage dealt: {p.damage_dealt}  Taken: {p.damage_taken}",
-    ]
-    for i, line in enumerate(stats):
-        safe_addstr(scr, sy+14+i, max(0,(w-len(line))//2), line, curses.color_pair(C_YELLOW))
-    score = calculate_score(p, gs)
-    sc = f"SCORE: {score}"
-    safe_addstr(scr, sy+19, max(0,(w-len(sc))//2), sc, curses.color_pair(C_GOLD) | curses.A_BOLD)
-    pr = "[ Press any key ]"
-    safe_addstr(scr, min(SCREEN_H-1, sy+21), max(0,(w-len(pr))//2), pr, curses.color_pair(C_DARK))
-    scr.refresh()
-    scr.getch()
-
-
-def show_victory(scr: Any, gs: GameState) -> None:
-    p = gs.player
-    elapsed = int(time.time() - gs.start_time)
-    m, s = elapsed // 60, elapsed % 60
-    scr.erase()
-    _, w = scr.getmaxyx()
-    art = [
-        "  *  .  *  .  *  .  *  .  *",
-        "    ___________________",
-        "   /                   \\",
-        "  /   VICTORY!!!        \\",
-        " /  THE DREAD LORD       \\",
-        "|   IS VANQUISHED         |",
-        "|  THORNHAVEN IS SAVED!   |",
-        "|_________________________|",
-        "  *  .  *  .  *  .  *  .  *",
-    ]
-    sy = 1
-    for i, line in enumerate(art):
-        safe_addstr(scr, sy+i, max(0,(w-len(line))//2), line,
-                   curses.color_pair(C_YELLOW) | curses.A_BOLD)
-    stats = [
-        f"Level: {p.level}   Kills: {p.kills}   Bosses: {p.bosses_killed}",
-        f"Gold: {p.gold}   Turns: {gs.turn_count}   Time: {m}m{s}s",
-        f"Items: {p.items_found}  Potions: {p.potions_drunk}  Scrolls: {p.scrolls_read}",
-        f"Damage dealt: {p.damage_dealt}  Taken: {p.damage_taken}",
-        "",
-        "You are a true hero of Thornhaven!",
-    ]
-    for i, line in enumerate(stats):
-        safe_addstr(scr, sy+11+i, max(0,(w-len(line))//2), line, curses.color_pair(C_GREEN))
-    score = calculate_score(p, gs)
-    sc = f"SCORE: {score}"
-    safe_addstr(scr, sy+18, max(0,(w-len(sc))//2), sc, curses.color_pair(C_GOLD) | curses.A_BOLD)
-    pr = "[ Press any key ]"
-    safe_addstr(scr, min(SCREEN_H-1, sy+20), max(0,(w-len(pr))//2), pr, curses.color_pair(C_DARK))
-    scr.refresh()
-    scr.getch()
-
-
-# ============================================================
-# CONTEXT TIPS (Phase 5, item 25)
-# ============================================================
 
 def check_context_tips(gs: GameState) -> None:
     """Fire first-encounter tips. Each tip shows exactly once."""
@@ -1316,10 +1340,19 @@ def _describe_tile(gs: GameState, x: int, y: int) -> str:
         if e.x == x and e.y == y and e.is_alive():
             boss_str = " (BOSS)" if e.boss else " (hostile)"
             return f"{e.name}{boss_str} HP: {e.hp}/{e.max_hp}"
+    # Check for NPCs
+    for npc in gs.npcs:
+        if npc["x"] == x and npc["y"] == y and not npc.get("interacted"):
+            return f"{npc['name']} (walk into them to talk)"
     # Check for items
     for it in gs.items:
         if it.x == x and it.y == y:
             return it.display_name
+    # Check for revealed traps
+    for trap in gs.traps:
+        if trap["x"] == x and trap["y"] == y and trap["visible"] and not trap["disarmed"]:
+            tname = TRAP_TYPES.get(trap["type"], {}).get("name", "Trap")
+            return f"{tname} (revealed - press D adjacent to disarm)"
     # Tile description
     tile = gs.tiles[y][x]
     TILE_NAMES = {
@@ -1336,6 +1369,7 @@ def _describe_tile(gs: GameState, x: int, y: int) -> str:
         T_SWITCH_OFF: "Switch (OFF)",
         T_SWITCH_ON: "Switch (ON)",
         T_STAIRS_LOCKED: "Sealed stairs (solve puzzle)",
+        T_ICE: "Sheet ice (you'll slide!)",
     }
     return TILE_NAMES.get(tile, "Unknown tile")
 
@@ -1473,10 +1507,7 @@ def rest_until_healed(gs: GameState, scr: Any) -> int:
     gs.msg("Resting...", C_CYAN)
     while p.hp < p.max_hp and gs.running and not gs.game_over:
         # Stop if enemy in FOV
-        fov_radius = p.get_torch_radius()
-        if "Blindness" in p.status_effects:
-            fov_radius = 1
-        compute_fov(gs.tiles, p.x, p.y, fov_radius, gs.visible)
+        compute_fov(gs.tiles, p.x, p.y, gs.fov_radius(), gs.visible)
         for e in gs.enemies:
             if e.is_alive() and (e.x, e.y) in gs.visible:
                 gs.msg(f"Resting interrupted! {e.name} spotted! (Rested {turns_rested} turns)", C_RED)

@@ -33,6 +33,7 @@ from .constants import (
     T_ENCHANT_ANVIL,
     T_FLOOR,
     T_FOUNTAIN,
+    T_ICE,
     T_LAVA,
     T_PEDESTAL_UNLIT,
     T_SECRET_WALL,
@@ -54,7 +55,7 @@ from .constants import (
     WEAPON_TYPES,
     B,
 )
-from .entities import Enemy, Item
+from .entities import Enemy, Item, ShopItem
 from .mapgen import generate_dungeon
 
 if TYPE_CHECKING:
@@ -70,6 +71,11 @@ def generate_floor(gs: GameState, floor_num: int) -> None:
     gs.floors_explored.add(floor_num)
     gs.tiles, gs.rooms, start, gs.stair_down = generate_dungeon(floor_num)
     gs.player.x, gs.player.y = start
+    # The Dread Lord seals the way down until he falls
+    if floor_num == ENEMY_TYPES["dread_lord"]["min_floor"]:
+        sx, sy = gs.stair_down
+        if gs.tiles[sy][sx] == T_STAIRS_DOWN:
+            gs.tiles[sy][sx] = T_STAIRS_LOCKED
     gs.explored = [[False] * MAP_W for _ in range(MAP_H)]
     gs.enemies = []
     gs.items = []
@@ -93,6 +99,7 @@ def generate_floor(gs: GameState, floor_num: int) -> None:
     _place_alchemy_table(gs, floor_num)
     _place_wall_torches(gs, floor_num)
     _place_puzzle(gs, floor_num)
+    gs.puzzles_generated += len(gs.puzzles)
     _place_traps(gs, floor_num)
     _place_vignettes(gs, floor_num)
     _place_npcs(gs, floor_num)
@@ -142,8 +149,15 @@ def _apply_branch_terrain(gs: GameState, floor_num: int, branch_key: str) -> Non
     random.shuffle(floor_tiles)
     water_count = int(len(floor_tiles) * B["branch_terrain_base_fraction"] * bdef.get("water_boost", 1.0))
     lava_count = int(len(floor_tiles) * B["branch_terrain_base_fraction"] * bdef.get("lava_boost", 1.0))
+    ice_count = int(len(floor_tiles) * B["branch_terrain_base_fraction"] * bdef.get("ice_boost", 0.0))
     protected = {(gs.player.x, gs.player.y), gs.stair_down}
     idx = 0
+    for _ in range(ice_count):
+        if idx < len(floor_tiles):
+            x, y = floor_tiles[idx]
+            if (x, y) not in protected:
+                gs.tiles[y][x] = T_ICE  # walkable, so connectivity is safe
+            idx += 1
     for _ in range(water_count):
         if idx < len(floor_tiles):
             x, y = floor_tiles[idx]
@@ -175,9 +189,11 @@ def _populate_enemies(gs: GameState, floor_num: int) -> None:
         eligible = [k for k, v in ENEMY_TYPES.items()
                     if v["min_floor"] <= floor_num <= v.get("max_floor", 99) and not v.get("boss")]
     # Bosses: standard bosses spawn on their designated floors
+    # (branch mini-bosses only spawn via their branch, below)
+    branch_mini_bosses = {bdef["mini_boss"] for bdef in BRANCH_DEFS.values()}
     for etype, tmpl in ENEMY_TYPES.items():
         if tmpl.get("boss") and tmpl["min_floor"] == floor_num:
-            if etype in ("crypt_guardian", "flame_tyrant", "elder_brain", "beast_lord"):
+            if etype in branch_mini_bosses:
                 continue
             pos = _find_spawn_pos(gs)
             if pos:
@@ -225,6 +241,7 @@ def _populate_enemies(gs: GameState, floor_num: int) -> None:
 
 def _populate_items(gs: GameState, floor_num: int) -> None:
     num = B["items_base"] + floor_num * B["items_per_floor"] + random.randint(0, B["items_random_bonus"])
+    num = max(1, round(num * gs.difficulty_mods.get("item_mult", 1.0)))
     for _ in range(num):
         pos = _find_spawn_pos(gs)
         if pos:
@@ -232,15 +249,27 @@ def _populate_items(gs: GameState, floor_num: int) -> None:
             if item:
                 gs.items.append(item)
     # Guarantee food items per floor so starvation isn't RNG-dependent
-    for _ in range(random.randint(B["guaranteed_food_min"], B["guaranteed_food_max"])):
+    food_n = random.randint(B["guaranteed_food_min"], B["guaranteed_food_max"])
+    food_n = max(1, round(food_n * gs.difficulty_mods.get("food_mult", 1.0)))
+    for _ in range(food_n):
         pos = _find_spawn_pos(gs)
         if pos:
             f = random.choice(FOOD_TYPES)
             gs.items.append(Item(pos[0], pos[1], "food", f["name"], f))
+    # Branch bonus scrolls (Sunken Library: rich loot, water risk)
+    if gs.active_branch:
+        for _ in range(BRANCH_DEFS[gs.active_branch].get("bonus_scrolls", 0)):
+            pos = _find_spawn_pos(gs)
+            if pos:
+                eff = random.choice(SCROLL_EFFECTS)
+                gs.items.append(Item(pos[0], pos[1], "scroll", eff,
+                                     {"effect": eff, "label": gs.scroll_ids[eff], "char": '?'}))
+    gold_mult = gs.difficulty_mods.get("gold_mult", 1.0)
     for _ in range(random.randint(B["gold_piles_min"], B["gold_piles_max"])):
         pos = _find_spawn_pos(gs)
         if pos:
             amt = random.randint(B["gold_per_floor_min"], B["gold_per_floor_max"]) * min(floor_num, 5)
+            amt = max(1, round(amt * gold_mult))
             gs.items.append(Item(pos[0], pos[1], "gold", 0, {"amount": amt, "name": f"{amt} gold"}))
 
 
@@ -444,7 +473,8 @@ def _place_puzzle(gs: GameState, floor_num: int) -> None:
     elif puzzle_type == "locked_stairs":
         sx, sy = gs.stair_down
         if gs.tiles[sy][sx] == T_STAIRS_DOWN:
-            gs.tiles[sy][sx] = T_STAIRS_LOCKED
+            # Place switches BEFORE locking — if no switch position lands,
+            # the stairs must stay unlocked or the floor is unwinnable
             positions = []
             for _ in range(2):
                 px = random.randint(rx, rx + rw - 1)
@@ -453,6 +483,7 @@ def _place_puzzle(gs: GameState, floor_num: int) -> None:
                     gs.tiles[py][px] = T_SWITCH_OFF
                     positions.append((px, py))
             if positions:
+                gs.tiles[sy][sx] = T_STAIRS_LOCKED
                 gs.puzzles.append({"type": "locked_stairs", "positions": positions,
                                    "solved": False, "room": room, "stairs": (sx, sy)})
 
@@ -721,6 +752,3 @@ def _find_spawn_pos(gs: GameState) -> tuple[int, int] | None:
                     return (x, y)
     return None
 
-
-# Import ShopItem here to avoid circular import at module level
-from .entities import ShopItem

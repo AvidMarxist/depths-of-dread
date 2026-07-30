@@ -583,6 +583,7 @@ class TestHunger:
             if 0 <= nx < MAP_W and 0 <= ny < MAP_H and gs.tiles[ny][nx] in (T_FLOOR, T_CORRIDOR):
                 gs.enemies = [e for e in gs.enemies if not (e.x == nx and e.y == ny)]
                 player_move(gs, dx, dy)
+                process_status(gs)  # starvation ticks in process_status
                 assert p.hp < 10
                 return
         pytest.skip("No walkable tile adjacent")

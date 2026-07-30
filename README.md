@@ -9,9 +9,9 @@
 
 # Depths of Dread
 
-**A terminal roguelike dungeon crawler with Claude-powered AI agents. v1.0.**
+**A terminal roguelike dungeon crawler with Claude-powered AI agents. v1.1.**
 
-Descend 20 floors of procedurally generated dungeons. Fight 30+ enemy types and 8 bosses with multi-phase fights. Choose your class, solve puzzles, brew alchemy, and survive — or watch an AI do it for you.
+Descend 20 floors of procedurally generated dungeons. Fight 35+ enemy types and 10 bosses with multi-phase fights. Choose your class, solve puzzles, brew alchemy, and survive — or watch an AI do it for you.
 
 Built entirely in Python with zero external dependencies. Runs in any terminal.
 
@@ -55,9 +55,15 @@ In Agent mode, press **Shift+P** to enter **Pilot Mode** — take manual control
 - **Monster fleeing** — wounded enemies retreat (undead and bosses fight to death)
 
 ### Dungeon Branches
+- Floor 2: Choose **Fungal Depths** (spores, poison) or **Trapped Halls** (trap gauntlet)
 - Floor 5: Choose **Flooded Crypts** (undead, water) or **Burning Pits** (demons, lava)
 - Floor 10: Choose **Mind Halls** (psychic, paralyze) or **Beast Warrens** (fast beasts, traps)
+- Floor 13: Choose **Void Rift** (shadow horrors) or **Infernal Forge** (molten constructs)
+- Floor 17: Choose **The Frozen Abyss** (sheet ice — you slide until something stops you) or **The Sunken Library** (rich scroll loot, but wading can dissolve your scrolls)
 - Each branch has themed enemies, terrain modifications, and a mini-boss guardian
+- **The Kraken** guards the Sunken Library — blinding ink clouds and constricting tentacles you must break free from (STR helps)
+- **The Frost Titan** rules the Frozen Abyss — freezing blows on slick ice
+- The Dread Lord (F15) now **seals the stairway to The Abyss** — you must defeat him to descend
 
 ### Stealth System
 - Enemies spawn **asleep** or **unwary** — sleeping enemies skip turns, unwary only patrol
@@ -96,8 +102,9 @@ In Agent mode, press **Shift+P** to enter **Pilot Mode** — take manual control
 - **Challenge modes** — Ironman (permadeath), Speedrun (floor timer), Pacifist, Dark (reduced torch)
 - **Difficulty modes** — easy, normal, hard (--difficulty flag)
 - **Meta-progression** — lifetime stats unlock bonuses for future runs
-- **256-color palettes** — 19 themed floor palettes with automatic fallback to 16-color
-- **Unicode tiles** — rich glyphs (█ walls, · floors, ≈ water, ▼▲ stairs) with ASCII fallback
+- **Three graphics modes** (press `G` to cycle) — **Old School** (pure ASCII), **Slightly Less Old School** (Unicode glyphs + 21 themed 256-color floor palettes), and **8-Bit** (NES-style: rooms render as dark panels with background-tinted tiles and saturated hazard blocks)
+- **256-color palettes** — 21 themed floor palettes with automatic fallback to 16-color
+- **Unicode tiles** — rich glyphs (█ walls, · floors, ≈ water, ░ ice, ▼▲ stairs) with ASCII fallback
 
 ---
 
@@ -124,6 +131,7 @@ In Agent mode, press **Shift+P** to enter **Pilot Mode** — take manual control
 | `R` | Rest until healed |
 | `.` or `5` | Wait (skip one turn, heal if not starving) |
 | `T` | Toggle torch on/off |
+| `G` | Cycle graphics mode (ASCII / Unicode / 8-Bit) |
 | `J` | Journal (identified items log) |
 | `M` | Bestiary (Monster Memory) |
 | `c` | Character sheet |

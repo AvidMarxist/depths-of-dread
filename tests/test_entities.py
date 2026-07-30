@@ -181,8 +181,10 @@ class TestBossDrops:
         _award_kill(gs, boss)
         # Should have dropped the boss weapon
         assert len(gs.items) > items_before
-        dropped = [it for it in gs.items if it.display_name == "Ogre King's Maul"]
+        dropped = [it for it in gs.items if it.data.get("name") == "Ogre King's Maul"]
         assert len(dropped) == 1
+        # Boss weapons carry an inherent bonus, shown in the display name
+        assert dropped[0].display_name == "Ogre King's Maul +2"
 
     def test_lifesteal_heals_player(self):
         gs = GameState(headless=True)
